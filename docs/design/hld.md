@@ -1,5 +1,19 @@
 # High-level design
 
+## Architecture style
+
+Foreman Solo is a **modular monolithic CLI**: one program, run locally, with nothing deployed. It is not a microservice system and has no server (ADR-0001).
+
+| Aspect | Style | Where |
+|---|---|---|
+| Overall flow | Pipeline: load, parse, adapt, run rules, score, report. Each stage only passes data to the next | `src/scan.ts` |
+| Framework support | Adapter pattern: framework-specific code produces a normalized `ProjectModel`; rules never see the framework | `src/adapters/` |
+| Rules | Plugin-style: independent rule groups registered in one list, described by one catalog | `src/rules/` |
+| Output | Reporters all read the same `ScanResult` | `src/report/` |
+| Network access | Injected: the dependency audit is passed in, so it can be replaced or turned off | `RuleContext.audit` |
+
+Known limit: only the Express adapter exists, so "a new framework needs no rule changes" (NFR-12) is designed for but not yet proven by a second adapter.
+
 ## System diagram
 
 ```

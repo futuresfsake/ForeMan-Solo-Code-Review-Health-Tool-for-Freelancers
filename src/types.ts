@@ -15,6 +15,8 @@ export interface Finding {
   file: string;
   line: number;
   message: string;
+  /** The business consequence in plain English. */
+  risk: string;
   remediation: string;
   checklistItems: string[];
   suppressed?: { reason: string };

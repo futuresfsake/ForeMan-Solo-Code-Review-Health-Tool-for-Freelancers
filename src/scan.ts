@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildExpressModel } from "./adapters/express.js";
+import { detectFramework, supportedLabels } from "./adapters/index.js";
 import type { Config } from "./config.js";
 import { matchesPath } from "./glob.js";
 import { loadProject, readPackageJson } from "./loader.js";
@@ -53,8 +53,8 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
   const absRoot = path.resolve(root);
   const loaded = loadProject(absRoot, config.ignorePaths);
   const packageJson = readPackageJson(absRoot);
-  const express = buildExpressModel(loaded.files, packageJson);
-  const warnings = [...loaded.warnings, ...express.warnings];
+  const adapter = detectFramework(loaded.files, packageJson);
+  const warnings = [...loaded.warnings, ...adapter.warnings];
 
   const name =
     config.report.projectName ||
@@ -64,18 +64,18 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
   const model: ProjectModel = {
     root: absRoot,
     name,
-    framework: express.detected ? "express" : "unknown",
-    routes: express.routes,
-    appMiddleware: express.appMiddleware,
-    entry: express.entry,
+    framework: adapter.framework,
+    routes: adapter.routes,
+    appMiddleware: adapter.appMiddleware,
+    entry: adapter.entry,
     files: loaded.files,
     textFiles: loaded.textFiles,
     packageJson,
     config,
   };
   const hasRoutes = model.routes.length > 0;
-  if (express.detected && !hasRoutes) {
-    warnings.push("Express was detected but no routes were found; route checks did not run.");
+  if (adapter.detected && !hasRoutes) {
+    warnings.push(`${adapter.label} was detected but no routes were found; route checks did not run.`);
   }
 
   const skipped = new Map<string, string>();
@@ -89,7 +89,7 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
         return false;
       }
       if (rule.needsRoutes && !hasRoutes) {
-        skipped.set(id, express.detected ? "no routes found" : "needs a supported framework (Express)");
+        skipped.set(id, adapter.detected ? "no routes found" : `needs a supported framework (${supportedLabels()})`);
         return false;
       }
       return true;

@@ -5,6 +5,7 @@ export type Severity = "blocker" | "should-fix" | "nice-to-have";
 export type Confidence = "high" | "medium" | "low";
 export type ChecklistStatus = "pass" | "fail" | "unverified";
 export type Trend = "up" | "flat" | "down" | "none";
+export type Framework = "express" | "nestjs" | "unknown";
 export type Category = "secrets" | "injection" | "validation" | "auth" | "config" | "deps";
 
 export interface Finding {
@@ -52,7 +53,7 @@ export interface RouteInfo {
 export interface ProjectModel {
   root: string;
   name: string;
-  framework: "express" | "unknown";
+  framework: Framework;
   routes: RouteInfo[];
   appMiddleware: string[];
   /** Where the Express app is created, used to anchor app-wide findings. */
@@ -61,6 +62,22 @@ export interface ProjectModel {
   textFiles: TextFile[];
   packageJson: Record<string, unknown> | null;
   config: Config;
+}
+
+/** What every framework adapter returns; rules only ever see this shape. */
+export interface AdapterModel {
+  detected: boolean;
+  routes: RouteInfo[];
+  appMiddleware: string[];
+  entry?: { file: string; line: number };
+  warnings: string[];
+}
+
+export interface Adapter {
+  framework: Exclude<Framework, "unknown">;
+  /** Shown in the terminal report and in "not checked" reasons. */
+  label: string;
+  build(files: ParsedFile[], packageJson: Record<string, unknown> | null): AdapterModel;
 }
 
 export interface AuditVulnerability {
@@ -115,7 +132,7 @@ export interface ScanResult {
   tool: "foreman-solo";
   toolVersion: string;
   scannedAt: string;
-  project: { name: string; framework: "express" | "unknown" };
+  project: { name: string; framework: Framework };
   score: number;
   trend: Trend;
   previousScan?: { scannedAt: string; score: number };

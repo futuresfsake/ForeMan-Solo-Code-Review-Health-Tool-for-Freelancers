@@ -5,6 +5,7 @@ import { ConfigError, loadConfig, type Config } from "./config.js";
 import { globToRegExp } from "./glob.js";
 import { applyHistory } from "./history.js";
 import { initProject } from "./init.js";
+import { BrandError, loadBrand } from "./report/brand.js";
 import { renderClientHtml } from "./report/client.js";
 import { renderHtml, renderSummaryHtml } from "./report/html.js";
 import { COLOR, PLAIN, open, renderMarkdown, renderSummaryTable, renderTerminal, type SummaryRow } from "./report/text.js";
@@ -124,7 +125,11 @@ function writeReport(dir: string, scanned: Scanned, format: ReportFormat): strin
       ? renderHtml(result)
       : format === "md"
         ? renderMarkdown(result)
-        : renderClientHtml(result, { preparedBy: config.report.preparedBy, clientName: config.report.clientName });
+        : renderClientHtml(result, {
+            preparedBy: config.report.preparedBy,
+            clientName: config.report.clientName,
+            brand: loadBrand(scanned.root, config.report),
+          });
   fs.writeFileSync(file, content);
   return file;
 }
@@ -228,7 +233,7 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     return code;
   } catch (err) {
     if (err instanceof CommanderError) return err.exitCode === 0 ? EXIT.ok : EXIT.usage;
-    if (err instanceof UsageError || err instanceof ConfigError) {
+    if (err instanceof UsageError || err instanceof ConfigError || err instanceof BrandError) {
       io.err(`Error: ${err.message}`);
       return EXIT.usage;
     }

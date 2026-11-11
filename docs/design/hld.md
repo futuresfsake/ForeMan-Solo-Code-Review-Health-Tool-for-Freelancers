@@ -3,7 +3,7 @@
 ## System diagram
 
 ```
-                 foreman scan [path | --all glob]
+                 foreman-solo scan [path | --all glob]
                               |
                         +-----v------+
                         |    CLI     |  commander
@@ -14,7 +14,7 @@
                   +-----------+-----------+
                               |
                   +-----------v-----------+
-                  |  Parser (ts-morph)    |  AST, no execution
+                  |  Parser (TypeScript) |  AST, no execution
                   +-----------+-----------+
                               |
                   +-----------v-----------+
@@ -49,7 +49,7 @@ Post-MVP: `ScanResult` + diff + dependent files feed the **LLM context pass** (`
 |---|---|
 | CLI | Flags, orchestration, exit codes |
 | Project loader | Collect files (respecting ignores), read `package.json`, config, context file |
-| Parser | ts-morph project over JS/TS |
+| Parser | TypeScript compiler API, parse-only, one file at a time |
 | Adapter | Framework-specific extraction to a normalized `ProjectModel` |
 | Rules | Pure functions `(ProjectModel, ctx) -> Finding[]`, framework-agnostic |
 | Aggregator | Merge, dedupe, apply suppressions |

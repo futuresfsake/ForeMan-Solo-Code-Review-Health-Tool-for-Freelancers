@@ -18,7 +18,9 @@
 
 **How do I scan every client project?** `foreman-solo scan --all "./clients/*"`.
 
-**How do I get weekly checks?** Use the sample GitHub Action or cron from `foreman-solo init` (M8).
+**How do I get weekly checks?** Run `foreman-solo init --ci` in the project. It adds a GitHub Actions workflow that scans on every push and once a week; GitHub emails you when it fails. On your own server, a cron line such as `0 6 * * 1 cd /srv/app && npx foreman-solo scan --fail-under 70` does the same.
+
+**What do I send my client?** `foreman-solo scan --report client` writes a plain-English summary with no code or file paths. Keep the technical report for yourself.
 
 **Why did my score drop with no code change?** A newly disclosed CVE in a dependency.
 

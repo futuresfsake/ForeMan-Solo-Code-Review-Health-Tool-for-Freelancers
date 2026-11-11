@@ -46,7 +46,9 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
 | **Private by design** | No accounts, no telemetry, nothing uploaded. |
 
-Not built yet: simulated senior review (LLM, opt-in, with confidence levels and pushback), explain-my-code mode, and NestJS, Fastify and Next.js support. See the [roadmap](#roadmap).
+Not built yet: simulated senior review (LLM, opt-in, with confidence levels and pushback), explain-my-code mode, and Fastify and Next.js support. See the [roadmap](#roadmap).
+
+**What to rely on.** The dependable part is the static scan: it is deterministic, offline and never uses an LLM. The planned LLM review is an optional, experimental extra. It will run on a local model through [Ollama](https://ollama.com) by default, so nothing leaves your machine ([ADR-0007](docs/decisions/adr/0007-llm-provider-ollama-first.md)). Small local models can be wrong, so every comment will carry a confidence level and say it is machine-generated. Treat it as a second opinion, never as the review.
 
 ## Quick start
 

@@ -11,6 +11,15 @@ function label(route: RouteInfo): string {
   return `${route.method} ${route.path}`;
 }
 
+/** Public paths also match hyphenated names: "/reset" covers "/reset-password". */
+function isPublicPath(routePath: string, patterns: string[]): boolean {
+  const lower = routePath.toLowerCase();
+  return patterns.some((p) => {
+    const escaped = p.toLowerCase().replace(/\/$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`${escaped}(?=$|[/-])`).test(lower);
+  });
+}
+
 function containsSegment(routePath: string, pattern: string): boolean {
   const p = pattern.toLowerCase().replace(/\/$/, "");
   const lower = routePath.toLowerCase();
@@ -26,13 +35,19 @@ export const authRule: Rule = {
     for (const route of model.routes) {
       if (hasAuth(route, model)) continue;
       const byPath = pathPatterns.find((p) => containsSegment(route.path, p));
-      const isPublic = publicPaths.some((p) => containsSegment(route.path, p));
+      const isPublic = isPublicPath(route.path, publicPaths);
       if (byPath && !isPublic) {
+        // An open POST on the users collection is very often public sign-up.
+        const maybeSignup = route.method === "POST" && /\/users$/i.test(route.path);
         findings.push({
           ruleId: "auth/missing-on-sensitive-route",
           file: route.file,
           line: route.line,
-          message: `${label(route)} is under "${byPath}" and has no authentication middleware.`,
+          severity: maybeSignup ? "should-fix" : undefined,
+          confidence: maybeSignup ? "low" : undefined,
+          message: maybeSignup
+            ? `${label(route)} has no authentication middleware. If this is public sign-up, suppress this finding with a reason.`
+            : `${label(route)} is under "${byPath}" and has no authentication middleware.`,
         });
       } else if (!byPath && !isPublic && methods.includes(route.method)) {
         findings.push({
@@ -61,7 +76,9 @@ export const validationRule: Rule = {
       if (!first || !ts.isIdentifier(first.name)) continue;
       const req = first.name.text;
       const text = handler.getText();
-      const used = new RegExp(`\\b${req}\\.(params|body|query)\\b`).exec(text);
+      // Body and query are where type confusion and mass assignment happen;
+      // a path parameter alone is a string and far less risky.
+      const used = new RegExp(`\\b${req}\\.(body|query)\\b`).exec(text) ?? new RegExp(`\\b${req}\\.(params)\\b`).exec(text);
       if (!used) continue;
       const names = [...model.appMiddleware, ...route.middleware];
       if (names.some((n) => VALIDATION_MIDDLEWARE.test(n))) continue;
@@ -70,6 +87,7 @@ export const validationRule: Rule = {
         ruleId: "validation/unvalidated-param",
         file: route.file,
         line: route.line,
+        confidence: used[1] === "params" ? "low" : undefined,
         message: `${label(route)} reads ${req}.${used[1]} with no visible validation.`,
       });
     }

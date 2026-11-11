@@ -46,7 +46,7 @@ export function renderTerminal(result: ScanResult, s: Style): string {
   const out: string[] = [];
   const findings = open(result);
   const suppressed = result.findings.length - findings.length;
-  const framework = result.project.framework === "express" ? "Express" : "no supported framework detected";
+  const framework = { express: "Express", nestjs: "NestJS", unknown: "no supported framework detected" }[result.project.framework];
 
   out.push("", `${s.bold("Foreman Solo")}  ·  ${result.project.name}  ·  ${framework}`, "");
   const trend = result.previousScan ? `${TREND_LABEL[result.trend]}, was ${result.previousScan.score}` : TREND_LABEL.none;

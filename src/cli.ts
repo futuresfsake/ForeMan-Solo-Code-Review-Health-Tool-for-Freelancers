@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { ConfigError, loadConfig } from "./config.js";
+import { ConfigError, loadConfig, type Config } from "./config.js";
 import { globToRegExp } from "./glob.js";
 import { applyHistory } from "./history.js";
+import { initProject } from "./init.js";
+import { renderClientHtml } from "./report/client.js";
 import { renderHtml, renderSummaryHtml } from "./report/html.js";
 import { COLOR, PLAIN, open, renderMarkdown, renderSummaryTable, renderTerminal, type SummaryRow } from "./report/text.js";
 import { runNpmAudit } from "./rules/deps.js";
@@ -34,7 +36,7 @@ export function defaultIo(): Io {
 
 interface ScanFlags {
   all?: string[];
-  report?: "html" | "md";
+  report?: ReportFormat;
   out?: string;
   format: "text" | "json";
   context?: string;
@@ -43,6 +45,9 @@ interface ScanFlags {
   audit: boolean;
   history: boolean;
 }
+
+type ReportFormat = "html" | "md" | "client";
+const REPORT_FILE: Record<ReportFormat, string> = { html: "report.html", md: "report.md", client: "client-report.html" };
 
 class UsageError extends Error {}
 
@@ -94,6 +99,7 @@ function expandProjects(patterns: string[], cwd: string): string[] {
 interface Scanned {
   root: string;
   result: ScanResult;
+  config: Config;
   failUnder: number;
 }
 
@@ -102,17 +108,24 @@ function scanOne(root: string, flags: ScanFlags, io: Io): Scanned {
   const config = loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined);
   const result = scanProject(root, { config, audit: flags.audit && config.audit.enabled ? io.audit : undefined });
   applyHistory(root, result, flags.history);
-  return { root, result, failUnder: flags.failUnder ?? config.failUnder };
+  return { root, result, config, failUnder: flags.failUnder ?? config.failUnder };
 }
 
 function failed(s: Scanned): boolean {
   return s.result.score < s.failUnder || open(s.result).some((f) => f.severity === "blocker");
 }
 
-function writeReport(dir: string, result: ScanResult, format: "html" | "md"): string {
+function writeReport(dir: string, scanned: Scanned, format: ReportFormat): string {
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, format === "html" ? "report.html" : "report.md");
-  fs.writeFileSync(file, format === "html" ? renderHtml(result) : renderMarkdown(result));
+  const file = path.join(dir, REPORT_FILE[format]);
+  const { result, config } = scanned;
+  const content =
+    format === "html"
+      ? renderHtml(result)
+      : format === "md"
+        ? renderMarkdown(result)
+        : renderClientHtml(result, { preparedBy: config.report.preparedBy, clientName: config.report.clientName });
+  fs.writeFileSync(file, content);
   return file;
 }
 
@@ -138,8 +151,8 @@ function runScan(target: string | undefined, flags: ScanFlags, io: Io): number {
   if (!flags.all) {
     const root = path.resolve(io.cwd, target ?? ".");
     const scanned = scanOne(root, flags, io);
-    const outDir = path.resolve(io.cwd, flags.out ?? loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined).report.outDir);
-    const reportFile = flags.report ? writeReport(outDir, scanned.result, flags.report) : undefined;
+    const outDir = path.resolve(io.cwd, flags.out ?? scanned.config.report.outDir);
+    const reportFile = flags.report ? writeReport(outDir, scanned, flags.report) : undefined;
     if (flags.format === "json") io.out(JSON.stringify(scanned.result, null, 2));
     else {
       io.out(renderTerminal(scanned.result, style));
@@ -154,7 +167,7 @@ function runScan(target: string | undefined, flags: ScanFlags, io: Io): number {
   const rows: SummaryRow[] = scans.map((s) => ({ result: s.result, dir: safeDirName(s.result.project.name, used) }));
   let summaryFile: string | undefined;
   if (flags.report) {
-    rows.forEach((row) => writeReport(path.join(outDir, row.dir), row.result, flags.report!));
+    rows.forEach((row, i) => writeReport(path.join(outDir, row.dir), scans[i]!, flags.report!));
     if (flags.report === "html") {
       summaryFile = path.join(outDir, "summary.html");
       fs.writeFileSync(summaryFile, renderSummaryHtml(rows, new Date().toISOString()));
@@ -184,7 +197,7 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .description("Scan a Node project (default: the current folder) and print a health report.")
     .argument("[path]", "project folder to scan")
     .option("--all <paths...>", "scan several project folders and print one summary table")
-    .option("--report <format>", "also write a report file: html or md", choice(["html", "md"] as const))
+    .option("--report <format>", "also write a report file: html, md, or client (plain-English summary)", choice(["html", "md", "client"] as const))
     .option("--out <dir>", "folder for report files (default: ./foreman-report)")
     .option("--format <format>", "what to print: text or json", choice(["text", "json"] as const), "text")
     .option("--context <file>", "project context file (reserved for later features)")
@@ -194,6 +207,20 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .option("--no-history", "do not write .foreman/history.json into the project")
     .action((target: string | undefined, flags: ScanFlags) => {
       code = runScan(target, flags, io);
+    });
+
+  program
+    .command("init")
+    .description("Add a starter config to a project and keep Foreman Solo's output out of git.")
+    .argument("[path]", "project folder")
+    .option("--ci", "also add a GitHub Actions workflow that scans on push and weekly")
+    .action((target: string | undefined, flags: { ci?: boolean }) => {
+      const root = path.resolve(io.cwd, target ?? ".");
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`Not a folder: ${root}`);
+      const done = initProject(root, { ci: Boolean(flags.ci) });
+      for (const f of done.created) io.out(`created  ${f}`);
+      for (const f of done.skipped) io.out(`kept     ${f} (already exists)`);
+      if (done.created.length === 0) io.out("Nothing to do.");
     });
 
   try {

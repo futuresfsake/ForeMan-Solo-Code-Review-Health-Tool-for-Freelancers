@@ -21,7 +21,7 @@ export interface Config {
   rules: Record<string, "off" | Severity>;
   ignore: IgnoreEntry[];
   checklist: { attest: Record<string, string> };
-  report: { outDir: string; projectName: string; preparedBy: string; clientName: string };
+  report: { outDir: string; projectName: string; preparedBy: string; clientName: string; logo: string; accentColor: string };
 }
 
 export const CONFIG_FILE = "foreman.config.json";
@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: Config = {
   rules: {},
   ignore: [],
   checklist: { attest: {} },
-  report: { outDir: "./foreman-report", projectName: "", preparedBy: "", clientName: "" },
+  report: { outDir: "./foreman-report", projectName: "", preparedBy: "", clientName: "", logo: "", accentColor: "" },
 };
 
 const SEVERITIES = new Set(["blocker", "should-fix", "nice-to-have"]);
@@ -132,6 +132,13 @@ export function mergeConfig(raw: unknown): Config {
     if (typeof raw.report.projectName === "string") cfg.report.projectName = raw.report.projectName;
     if (typeof raw.report.preparedBy === "string") cfg.report.preparedBy = raw.report.preparedBy;
     if (typeof raw.report.clientName === "string") cfg.report.clientName = raw.report.clientName;
+    if (typeof raw.report.logo === "string") cfg.report.logo = raw.report.logo;
+    if (raw.report.accentColor !== undefined) {
+      if (typeof raw.report.accentColor !== "string" || !/^(#[0-9a-fA-F]{6})?$/.test(raw.report.accentColor)) {
+        throw new ConfigError(`"report.accentColor" must be a colour like "#2f5bd8".`);
+      }
+      cfg.report.accentColor = raw.report.accentColor;
+    }
   }
   return cfg;
 }

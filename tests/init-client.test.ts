@@ -87,6 +87,51 @@ describe("client report", () => {
     expect(html.replace(DISCLAIMER, "")).not.toMatch(/is secure|safe to launch/i);
   });
 
+  describe("branding (FR-26)", () => {
+    // A 1x1 transparent PNG.
+    const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+
+    async function run(report: Record<string, unknown>, extra: Record<string, string | Buffer> = {}) {
+      const dir = project({ ...LEAKY, "foreman.config.json": JSON.stringify({ report }) });
+      for (const [name, data] of Object.entries(extra)) fs.writeFileSync(path.join(dir, name), data);
+      const t = io(dir);
+      const errors: string[] = [];
+      t.err = (m) => errors.push(m);
+      const code = await main(["scan", "--report", "client", "--no-history", "--no-audit"], t);
+      const file = path.join(dir, "foreman-report", "client-report.html");
+      return { code, errors, html: fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "" };
+    }
+
+    it("embeds the logo and accent colour with no external requests", async () => {
+      const { code, html } = await run({ preparedBy: "Sam", logo: "logo.png", accentColor: "#c2410c" }, { "logo.png": PNG });
+      expect(code).toBe(EXIT.failed); // LEAKY has blockers; the report is still written
+      expect(html).toContain('src="data:image/png;base64,');
+      expect(html).toContain("#c2410c");
+      expect(html).toContain('alt="Sam logo"');
+      expect(html).not.toMatch(/https?:\/\/|<script/);
+    });
+
+    it("renders the same page as before when no brand is set", async () => {
+      const { html } = await run({ clientName: "Acme Ltd" });
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain("border-left:4px");
+    });
+
+    it("rejects a missing, oversized or non-image logo and a bad colour", async () => {
+      expect((await run({ logo: "nope.png" })).errors.join()).toContain("Logo file not found");
+      expect((await run({ logo: "notes.txt" }, { "notes.txt": "x" })).errors.join()).toContain("png, jpg, gif, webp or svg");
+      expect((await run({ logo: "big.png" }, { "big.png": Buffer.alloc(300 * 1024) })).errors.join()).toContain("larger than 256 KB");
+      const bad = await run({ accentColor: "red;} body{display:none" });
+      expect(bad.code).toBe(EXIT.usage);
+      expect(bad.errors.join()).toContain("accentColor");
+    });
+
+    it("escapes the alt text", async () => {
+      const { html } = await run({ preparedBy: `"><script>x</script>`, logo: "logo.png" }, { "logo.png": PNG });
+      expect(html).not.toContain("<script>x");
+    });
+  });
+
   it("is written by --report client using names from the config", async () => {
     const dir = project({ ...LEAKY, "foreman.config.json": JSON.stringify({ report: { clientName: "Acme Ltd" } }) });
     await main(["scan", "--report", "client", "--no-history"], io(dir));

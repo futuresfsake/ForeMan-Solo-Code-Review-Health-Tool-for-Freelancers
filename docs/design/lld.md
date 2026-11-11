@@ -20,6 +20,7 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/history.ts` | `.foreman/history.json` and trend |
 | `src/init.ts` | Starter config, git-ignore entries and the sample workflow |
 | `src/report/client.ts` | Plain-English client summary |
+| `src/report/brand.ts` | Loads the logo and accent colour for the client report |
 | `src/report/text.ts`, `html.ts` | Terminal, Markdown, summary table and HTML output |
 
 ## CLI
@@ -206,4 +207,4 @@ Inline `// foreman-ignore <ruleId>: <reason>` on the finding's line or the line 
 
 ## Client report
 
-`--report client` writes `client-report.html`: what was reviewed, findings grouped by topic with their plain-English risk, and the checklist in plain words. It contains no file paths, rule IDs, code or secrets, never states that the project is secure, and carries the disclaimer. Names come from `report.preparedBy` and `report.clientName`.
+`--report client` writes `client-report.html`: what was reviewed, findings grouped by topic with their plain-English risk, and the checklist in plain words. It contains no file paths, rule IDs, code or secrets, never states that the project is secure, and carries the disclaimer. Names come from `report.preparedBy` and `report.clientName`. Branding (FR-26) comes from `report.logo` and `report.accentColor`: `src/report/brand.ts` reads the logo file, checks its type and size (256 KB), and embeds it as a `data:` URI shown through an `<img>` tag, so the report stays one offline file and an SVG logo cannot run scripts. The accent colour is validated as `#rrggbb` by the config loader and used only for borders.

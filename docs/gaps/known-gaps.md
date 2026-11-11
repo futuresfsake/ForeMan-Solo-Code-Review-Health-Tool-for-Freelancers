@@ -5,18 +5,21 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 ## Today (alpha, 0.1.0)
 
 - Not published to npm. Run it from a clone (see the README).
-- Not yet validated on a real production codebase (milestone M4 gate). Expect false positives and misses until that is done.
-- `foreman-solo init`, `review` and `explain` do not exist yet.
-- No continuous integration is set up for the repository itself.
+- Validated only on three open-source Express apps, not yet on a production codebase of the author's own (see testing/validation-results.md). Expect false positives and misses on code styles not seen yet.
+- `foreman-solo review` and `explain` do not exist yet. Nothing in the tool uses an LLM.
+- The workflow written by `init --ci` calls the npm package, which is not published yet.
+- The client report has names but no logo or colour branding, and there is no PDF export (print the HTML page to PDF from a browser).
+- CI for this repository is defined but has not been observed running on macOS or Linux yet.
 
 ## By design (MVP)
 
 - Only Express is understood. Other frameworks get the generic secret, injection, dependency and config checks; route checks are reported as "not checked".
-- No LLM review, narratives, explain mode, branding or PDF.
+- No LLM review or explain mode. Risk text is fixed per rule, not written for the specific project.
 - No hosted dashboard, accounts or shared history; history is a local file.
 - No runtime or dynamic analysis. It never boots the app.
 - No type information: files are parsed one at a time, so data is not traced across files.
-- Routes with dynamic paths, routers built in loops, and mounts through package or alias imports (`@/routes`) are not resolved.
+- Routes with dynamic paths and mounts through package or alias imports (`@/routes`) are not resolved. Routers mounted in a loop are resolved only for the common table-of-objects style.
+- Not detected at all, because no rule covers them: NoSQL injection, command injection, insecure session and cookie settings, server-side request forgery, slow regular expressions, missing role checks on routes that do require login, and insecure direct object references.
 - Handlers defined in another file (controllers) are not inspected, so the validation rule skips them silently.
 - Auth detection is by middleware name. Custom names need `authMiddlewareNames`; auth done inside a handler is not seen and will be flagged.
 - Middleware order across files is approximated: app-level middleware is assumed to apply to every route.

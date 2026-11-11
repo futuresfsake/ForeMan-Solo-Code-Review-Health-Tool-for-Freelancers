@@ -11,6 +11,8 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/config.ts` | Defaults, loading and validation of `foreman.config.json` |
 | `src/loader.ts` | Walks the project, applies ignores, parses each file |
 | `src/adapters/express.ts` | Express routes, mounts and middleware into a normalized model |
+| `src/adapters/nestjs.ts` | NestJS controllers, guards and global setup into the same model |
+| `src/adapters/index.ts` | Adapter list; the first adapter that recognizes the project is used |
 | `src/rules/catalog.ts` | Every rule ID with severity, confidence and fix text |
 | `src/rules/*.ts` | Rule groups: secrets, injection, routes (auth, validation, rate limit), config, deps |
 | `src/scan.ts` | Runs rules, applies suppressions and overrides, builds the result |
@@ -80,7 +82,7 @@ interface RouteInfo {
 
 interface ProjectModel {
   root: string; name: string;
-  framework: "express" | "unknown";
+  framework: "express" | "nestjs" | "unknown";
   routes: RouteInfo[];
   appMiddleware: string[];
   entry?: { file: string; line: number };
@@ -106,6 +108,15 @@ Rules are pure functions of the model. They never touch the network; the depende
 - Also resolved: chained calls (`Router().use(a).use('/api', b)`), a router mounted on another router in the same file, and routers mounted in a loop over a table of `{ path, route }` objects.
 - Middleware order: a path-less `use()` applies to routes registered after it on the same receiver. A path-scoped `use('/admin', mw)` applies to routes under that path.
 - Not resolved: dynamic paths, other loop styles, mounts through non-relative imports. These produce a warning or are simply not seen (see known-gaps.md).
+
+## NestJS adapter
+
+- Detected from `@nestjs/core` or `@nestjs/common` in `package.json` or in an import. Checked before Express, because Nest usually runs on Express underneath.
+- Routes: methods decorated with `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, `@All`, `@Head` or `@Options` inside a `@Controller('prefix')` class. Paths are `setGlobalPrefix` + controller prefix + method path. `@Controller({ path })` and the first entry of an array path are read.
+- Middleware: arguments of `@UseGuards`, `@UsePipes` and `@UseInterceptors` on the class, then the method; `@Auth`, `@Roles`, `@Permissions` and `@Throttle` count by name. `AuthGuard('jwt')` is recorded as `AuthGuard:jwt`.
+- App level: `app.use`, `app.useGlobalGuards/Pipes/Interceptors` on the `NestFactory.create` result, and `{ provide: APP_GUARD | APP_PIPE | APP_INTERCEPTOR, useClass }` providers.
+- `route.handler` is left empty, so `validation/unvalidated-param` does not run on Nest routes (input comes through `@Body()` and `@Param()`, not `req`).
+- Not resolved: dynamic paths (warned), `@Public()` opt-outs from a global guard, URI versioning, modules registered with `RouterModule`.
 
 ## Rule catalog
 

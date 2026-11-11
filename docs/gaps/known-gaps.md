@@ -37,3 +37,5 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 
 - No institutional memory of a client's incidents.
 - No accountability if wrong; can be confidently wrong. Hence confidence levels and pushback.
+- The first provider is a small model running locally (ADR-0007). It is weaker than a large hosted model: expect missed issues, wrong comments and slow runs on modest hardware. The LLM review is experimental and optional, and the static scan never depends on it.
+- A hosted provider, if added later, sends code off the machine and will need explicit consent.

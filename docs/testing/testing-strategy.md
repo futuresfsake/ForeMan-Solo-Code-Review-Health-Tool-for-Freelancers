@@ -9,7 +9,7 @@
 | Adapter tests | Small Express apps -> expected routes, mounts and middleware | vitest (`tests/express.test.ts`) |
 | CLI integration | Call `main(argv, io)` with captured output and a fake audit; assert output, exit code, generated files | vitest (`tests/cli.test.ts`) |
 | Determinism | Run scan twice; JSON output must be byte-identical (modulo timestamp) | vitest |
-| Reference-project validation | Run on the author's real projects; every finding triaged true/false; FP count recorded per release | manual, logged in `tests/reference/RESULTS.md` |
+| Real-project validation | Run on real codebases; every finding judged true, arguable or wrong by hand; each wrong one becomes a regression test | manual, logged in [validation-results.md](validation-results.md), regressions in `tests/real-world-patterns.test.ts` |
 
 ## Fixtures
 

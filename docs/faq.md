@@ -4,7 +4,7 @@
 
 **Is it open source and free?** Yes, one npm package, MIT. No paid tier is planned.
 
-**Does it work on any Node app?** The generic checks do. Route/auth/validation checks need a framework adapter; Express first, others later.
+**Does it work on any Node app?** The generic checks do. Route/auth/validation checks need a framework adapter; Express and NestJS are supported; others later.
 
 **Does it run my app?** Never. It parses the code (NFR-07).
 

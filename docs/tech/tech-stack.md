@@ -2,25 +2,29 @@
 
 | Area | Choice | Why |
 |---|---|---|
-| Language | TypeScript on Node 20+ | Target audience is Node devs; same ecosystem as ts-morph |
+| Language | TypeScript on Node 20+, ES modules | The audience is Node developers; strict types catch mistakes in rule code |
 | CLI | commander | Small, standard, good subcommand support |
-| Parsing | ts-morph | Full TS/JS AST plus type info and import resolution (needed for context-aware review later) |
-| Dependency audit | `npm audit --json` | Zero extra service, data already trusted by the audience |
-| Tests | vitest | Fast, TS-native |
-| Lint/format | eslint + prettier | Standard |
-| Build | tsup | Single bundle for npx startup speed |
-| HTML report | Hand-built template, inline CSS | Self-contained, no framework needed |
-| Distribution | npm package `foreman-solo` (`foreman` is taken by an unrelated package; checked 2026-11-11), bins `foreman-solo` and `foreman` (ADR-0005) | `npx foreman-solo scan` |
+| Parsing | TypeScript compiler API (`ts.createSourceFile`) | Parses JS, TS and JSX one file at a time without type-checking; tolerant of syntax errors (ADR-0006) |
+| Dependency audit | `npm audit --json` | No extra service; data the audience already trusts |
+| Tests | vitest | Fast, TypeScript-native |
+| Lint | `tsc --noEmit` (strict) | Type-check as the lint step for now; ESLint/Prettier deferred (ADR-0006) |
+| Build | `tsc` to `dist/` | No bundler, so no third-party code is copied into the package |
+| HTML report | Hand-built template, inline CSS, no JavaScript | Self-contained, works offline, nothing to load |
+| Distribution | npm package `foreman-solo`, one bin `foreman-solo` | `foreman` is taken on npm and used by other tools (ADR-0005, ADR-0006). Not published yet |
 | LLM (post-MVP) | Provider-agnostic interface; user supplies key | No lock-in, opt-in |
+
+Runtime dependencies: `commander` and `typescript`. Nothing else.
 
 ## Deliberately NOT used
 
 | Not used | Reason |
 |---|---|
 | Hosted backend / database | Decision: CLI only (ADR-0001) |
-| Running the target app | Must work without booting, DB or test data |
-| tree-sitter (MVP) | ts-morph gives type info; revisit for non-JS/TS or perf (ADR-0003) |
-| Regex-only scanning | Too many false positives; AST first |
+| Running the target app | Must work without booting, a database or test data |
+| ts-morph | Only parsing is needed; the raw compiler API is lighter and faster to start (ADR-0006) |
+| tree-sitter | Native binaries complicate `npx`; revisit for non-JS/TS languages |
+| Regex-only scanning | Too many false positives; AST first. Regex is used only for well-known key formats |
 | Semgrep as the engine | Extra binary dependency; maybe a later import/export target |
+| A glob, colour or template library | A few dozen lines each; fewer dependencies to audit |
 | React/SPA for the report | A static file needs no framework |
 | Telemetry/analytics | Trust is the selling point |

@@ -29,14 +29,14 @@ footer{margin-top:32px;font-size:13px;color:var(--muted);border-top:1px solid va
 ul{margin:0;padding-left:20px}a{color:var(--accent)}
 `;
 
-export function page(title: string, body: string): string {
+export function page(title: string, body: string, extraCss = ""): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(title)}</title>
-<style>${CSS}</style>
+<style>${CSS}${extraCss}</style>
 </head>
 <body>
 <main>

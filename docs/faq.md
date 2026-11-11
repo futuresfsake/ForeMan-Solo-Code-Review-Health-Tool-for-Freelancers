@@ -16,9 +16,9 @@
 
 **Scan says dependencies were skipped.** `npm audit` needs network (or you passed `--no-audit`). The report lists it under skipped checks.
 
-**How do I scan every client project?** `foreman scan --all "./clients/*"`.
+**How do I scan every client project?** `foreman-solo scan --all "./clients/*"`.
 
-**How do I get weekly checks?** Use the sample GitHub Action or cron from `foreman init` (M8).
+**How do I get weekly checks?** Use the sample GitHub Action or cron from `foreman-solo init` (M8).
 
 **Why did my score drop with no code change?** A newly disclosed CVE in a dependency.
 

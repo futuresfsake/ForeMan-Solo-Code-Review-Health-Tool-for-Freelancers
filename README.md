@@ -40,7 +40,7 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 | **Health score** | A 0-100 score weighted by severity and confidence. |
 | **Go-live checklist** | A fixed gate: secrets removed, debug off, HTTPS, no stack-trace leaks, admin routes locked down, rate limiting on auth. |
 | **Dependency check** | `npm audit` results reformatted into findings. |
-| **Client-ready report** | `--report client` writes a plain-English summary with no code or file paths, ready to attach to an invoice. `--report html` is the technical version. |
+| **Client-ready report** | `--report client` writes a plain-English summary with no code or file paths, ready to attach to an invoice, with your logo and colour if you set them in the config. `--report html` is the technical version. |
 | **Risk in plain English** | Every finding says why it matters to the business, not just what the code does. |
 | **Ongoing care** | `init --ci` adds a workflow that rescans on every push and once a week. |
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
@@ -170,7 +170,7 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M3 | Rules, dependency check, score, checklist | Done |
 | M4 | Reports and validation on real projects (**gate**) | Met on three open-source apps; author's own project pending |
 | M5 | `scan --all`, history and trends, `init` | Done |
-| M7 | Plain-English risk, client report | Done (no logo branding) |
+| M7 | Plain-English risk, branded client report | Done |
 | M8 | Ongoing-care workflow sample | Done (`init --ci`) |
 | M10 | More frameworks | NestJS done on fixtures; Fastify and Next.js not started |
 | M6, M9 | LLM senior review, explain mode | Not started |

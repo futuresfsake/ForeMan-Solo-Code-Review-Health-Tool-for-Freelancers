@@ -24,4 +24,4 @@
 
 **Why did my score drop with no code change?** A newly disclosed CVE in a dependency.
 
-**Can the LLM review see my code?** Only if you enable it and supply a key, and you'll see what is sent first (M6+).
+**Can the LLM review see my code?** Only if you enable it (M6+). The default is a local model through Ollama, so nothing leaves your machine. A hosted provider would need your key and your explicit consent, and you'd see what is sent first. It is experimental: small local models can be wrong, and the static scan never depends on it.

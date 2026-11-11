@@ -121,6 +121,7 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
       file: r.file,
       line: r.line,
       message: r.message,
+      risk: meta.risk,
       remediation: meta.remediation,
       checklistItems: checklistItemsFor(r.ruleId),
     };

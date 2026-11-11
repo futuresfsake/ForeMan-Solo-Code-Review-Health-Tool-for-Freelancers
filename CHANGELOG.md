@@ -17,6 +17,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Rule `injection/code-eval`: `eval` or `new Function` on a dynamic value.
 - Express adapter: chained `Router().use()` calls, routers mounted on routers in the same file, and routers mounted from a table of `{ path, route }` objects.
 - NestJS adapter: controller routes with global and controller prefixes, guards, pipes and interceptors, and `APP_GUARD` style global providers. The input validation check does not run on Nest routes.
+- Client report branding: `report.logo` (png, jpg, gif, webp or svg, up to 256 KB, embedded in the file) and `report.accentColor` in the config.
 - CI workflow for this repository (lint, test, build, smoke scan on three operating systems).
 
 ### Changed

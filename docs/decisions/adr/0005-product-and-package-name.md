@@ -1,6 +1,6 @@
 # ADR-0005: Product name Foreman Solo, npm package `foreman-solo`
 
-- Status: Accepted (2026-11-11)
+- Status: Accepted (2026-11-11). The short `foreman` bin is dropped by ADR-0006; the names stand.
 
 ## Context
 

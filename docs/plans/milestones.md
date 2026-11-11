@@ -15,7 +15,7 @@ Exit criteria must be runnable or checkable.
 | M7 | Done, except logo branding | Plain-English risk text for every rule, and `--report client` with "prepared by" and client name |
 | M8 | Done as a sample | `init --ci` writes a workflow that scans on push and weekly and fails on blockers or a low score. It relies on the npm package, which is not published yet |
 | M9 | Not started | `explain` needs the LLM layer |
-| M10 | Not started | Only the Express adapter exists |
+| M10 | Done for NestJS, on fixtures | NestJS adapter; auth and rate-limit rules run on it unchanged; verified by `tests/nestjs.test.ts`. Not yet run on a real Nest project; Fastify and Next.js not started |
 
 ## Scope and exit criteria
 

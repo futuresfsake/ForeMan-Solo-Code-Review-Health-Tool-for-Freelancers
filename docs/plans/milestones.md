@@ -9,9 +9,13 @@ Exit criteria must be runnable or checkable.
 | M1 | Done | CLI, loader, parser, ignore handling; verified by `tests/cli.test.ts`, `tests/scan.test.ts` |
 | M2 | Done | Express adapter; verified by `tests/express.test.ts` |
 | M3 | Done | All MVP rules, audit wrapper, score, checklist, suppressions, exit codes; verified by `tests/rules.test.ts`, `tests/scan.test.ts` |
-| M4 | **Open (gate)** | Terminal, HTML, Markdown and JSON output are done. Validation on a real live project has **not** been done yet; only a synthetic demo app was scanned |
-| M5 | Partly done | `scan --all`, history and trend are done. `foreman-solo init` and the sample GitHub Action are not |
-| M6-M10 | Not started | Blocked on the M4 gate |
+| M4 | Met on substitute projects | All outputs are done. Validated on three open-source Express apps with every finding checked by hand ([validation-results.md](../testing/validation-results.md)). Still to do: repeat on the author's own project when one exists |
+| M5 | Done | `scan --all`, history and trend, `foreman-solo init`, and `init --ci` for a GitHub Actions workflow; verified by `tests/cli.test.ts`, `tests/init-client.test.ts` |
+| M6 | Not started | LLM review. Needs a provider choice and an API key; nothing in the tool calls an LLM today |
+| M7 | Done, except logo branding | Plain-English risk text for every rule, and `--report client` with "prepared by" and client name |
+| M8 | Done as a sample | `init --ci` writes a workflow that scans on push and weekly and fails on blockers or a low score. It relies on the npm package, which is not published yet |
+| M9 | Not started | `explain` needs the LLM layer |
+| M10 | Not started | Only the Express adapter exists |
 
 ## Scope and exit criteria
 

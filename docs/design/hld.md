@@ -12,7 +12,7 @@ Foreman Solo is a **modular monolithic CLI**: one program, run locally, with not
 | Output | Reporters all read the same `ScanResult` | `src/report/` |
 | Network access | Injected: the dependency audit is passed in, so it can be replaced or turned off | `RuleContext.audit` |
 
-Known limit: only the Express adapter exists, so "a new framework needs no rule changes" (NFR-12) is designed for but not yet proven by a second adapter.
+NFR-12 is shown by a second adapter: NestJS emits the same model and the auth and rate-limit rules run on it with no rule changes (`tests/nestjs.test.ts`). The adapter list is `src/adapters/index.ts`.
 
 ## System diagram
 

@@ -12,3 +12,11 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Output: `--report html|md`, `--format json`, `--all` multi-project summary, local score history with trend.
 - Suppressions with a mandatory reason (inline comment or config), rule overrides, checklist attestations.
 - Exit codes for CI: 0 ok, 1 blockers or score under `--fail-under`, 2 usage/config error, 3 internal error.
+- `foreman-solo init` (starter config, git-ignore entries) and `init --ci` (GitHub Actions workflow that scans on push and weekly).
+- Plain-English business risk on every finding, and `--report client` for a non-technical summary with "prepared by" and client name.
+- Rule `injection/code-eval`: `eval` or `new Function` on a dynamic value.
+- Express adapter: chained `Router().use()` calls, routers mounted on routers in the same file, and routers mounted from a table of `{ path, route }` objects.
+- CI workflow for this repository (lint, test, build, smoke scan on three operating systems).
+
+### Changed
+- After validating on three open-source Express apps (docs/testing/validation-results.md): test and fixture folders are ignored by default; enum-like values are no longer reported as secrets; hyphenated auth paths count as public; `auth.optional` no longer counts as authentication; an open `POST /users` and path-parameter-only validation findings are low confidence; commented-out code is not HTTPS evidence; option-less `cors()` is reported once per file.

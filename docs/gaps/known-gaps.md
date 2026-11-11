@@ -8,7 +8,7 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 - Validated only on three open-source Express apps, not yet on a production codebase of the author's own (see testing/validation-results.md). Expect false positives and misses on code styles not seen yet.
 - `foreman-solo review` and `explain` do not exist yet. Nothing in the tool uses an LLM.
 - The workflow written by `init --ci` calls the npm package, which is not published yet.
-- The client report has names but no logo or colour branding, and there is no PDF export (print the HTML page to PDF from a browser).
+- The client report supports a logo and one accent colour but no other theming, and there is no PDF export (print the HTML page to PDF from a browser).
 - CI for this repository is defined but has not been observed running on macOS or Linux yet.
 
 ## By design (MVP)

@@ -21,19 +21,19 @@ export interface Config {
   rules: Record<string, "off" | Severity>;
   ignore: IgnoreEntry[];
   checklist: { attest: Record<string, string> };
-  report: { outDir: string; projectName: string };
+  report: { outDir: string; projectName: string; preparedBy: string; clientName: string };
 }
 
 export const CONFIG_FILE = "foreman.config.json";
 
 export const DEFAULT_CONFIG: Config = {
-  ignorePaths: ["node_modules", "dist", "build", "coverage", "*.test.*", "*.spec.*", "__tests__", "*.min.js"],
+  ignorePaths: ["node_modules", "dist", "build", "coverage", "*.test.*", "*.spec.*", "__tests__", "__mocks__", "test", "tests", "e2e", "cypress", "fixtures", "*.min.js"],
   failUnder: 0,
   audit: { enabled: true },
   sensitiveRoutes: {
     pathPatterns: ["/admin", "/internal", "/users", "/account", "/payments", "/billing"],
     methods: ["POST", "PUT", "PATCH", "DELETE"],
-    publicPaths: ["/login", "/signin", "/register", "/signup", "/auth", "/webhook", "/forgot", "/reset", "/health", "/contact", "/subscribe"],
+    publicPaths: ["/login", "/signin", "/register", "/signup", "/logout", "/auth", "/oauth", "/callback", "/refresh", "/verify", "/webhook", "/forgot", "/reset", "/health", "/contact", "/subscribe"],
   },
   authMiddlewareNames: [],
   weights: { blocker: 15, "should-fix": 5, "nice-to-have": 1 },
@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: Config = {
   rules: {},
   ignore: [],
   checklist: { attest: {} },
-  report: { outDir: "./foreman-report", projectName: "" },
+  report: { outDir: "./foreman-report", projectName: "", preparedBy: "", clientName: "" },
 };
 
 const SEVERITIES = new Set(["blocker", "should-fix", "nice-to-have"]);
@@ -130,6 +130,8 @@ export function mergeConfig(raw: unknown): Config {
   if (isObject(raw.report)) {
     if (typeof raw.report.outDir === "string") cfg.report.outDir = raw.report.outDir;
     if (typeof raw.report.projectName === "string") cfg.report.projectName = raw.report.projectName;
+    if (typeof raw.report.preparedBy === "string") cfg.report.preparedBy = raw.report.preparedBy;
+    if (typeof raw.report.clientName === "string") cfg.report.clientName = raw.report.clientName;
   }
   return cfg;
 }

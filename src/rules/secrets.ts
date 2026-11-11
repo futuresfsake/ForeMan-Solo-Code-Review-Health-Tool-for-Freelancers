@@ -20,8 +20,17 @@ const KEY_PATTERNS: { label: string; re: RegExp }[] = [
 const PLACEHOLDER = /your|example|placeholder|changeme|xxxx|<.*>|\*\*\*|todo|dummy|sample|replace|insert|\$\{/i;
 const EXAMPLE_ENV = /\.(example|sample|template|dist|defaults?)$/i;
 
-function looksLikeSecretValue(value: string): boolean {
+/** "RESET_PASSWORD" and "resetPassword" are the same word: an enum, not a secret. */
+function sameWord(name: string, value: string): boolean {
+  const norm = (s: string): string => s.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+  return norm(name) === norm(value);
+}
+
+function looksLikeSecretValue(value: string, envFallback: boolean): boolean {
   if (value.length < 8 || /\s/.test(value)) return false;
+  // A value made only of letters is usually a label or an enum member. As the
+  // fallback for a secret environment variable it is still a real secret.
+  if (!envFallback && /^[A-Za-z]+$/.test(value)) return false;
   if (/^(https?:|\/|\.\.?\/)/.test(value)) return false;
   // All-lowercase words are almost always a name ("authorization", "x-api-key").
   if (/^[a-z]+(?:[-_.:][a-z]+)*$/.test(value)) return false;
@@ -59,7 +68,7 @@ export const secretsRule: Rule = {
       for (const a of stringAssignments(file.ast)) {
         if (!SECRET_NAME.test(a.name) || NOT_A_SECRET_NAME.test(a.name)) continue;
         if (DEFAULT_CREDENTIALS.has(a.value.toLowerCase())) continue; // config/default-credentials
-        if (!looksLikeSecretValue(a.value)) continue;
+        if (sameWord(a.name, a.value) || !looksLikeSecretValue(a.value, a.envFallback)) continue;
         if (KEY_PATTERNS.some((p) => p.re.test(a.value))) continue; // already reported above
         findings.push({
           ruleId: "secrets/hardcoded-password",

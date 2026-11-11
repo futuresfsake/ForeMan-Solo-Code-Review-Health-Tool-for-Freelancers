@@ -22,6 +22,8 @@ No telemetry, no accounts, no update pings. Before any LLM call the tool must sh
 - Not proof that code is secure. A high score means the checked rules found little, nothing more.
 - Not a substitute for human review on high-risk systems.
 
+See [legal.md](legal.md) for licence, disclaimer and trademark notes.
+
 Reports state which checks ran, which were skipped, and which checklist items are unverified. The client-ready report must use wording like "review completed" and never "certified secure".
 
 ## Handling of scanned code

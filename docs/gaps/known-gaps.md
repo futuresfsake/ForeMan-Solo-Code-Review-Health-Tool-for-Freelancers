@@ -13,7 +13,8 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 
 ## By design (MVP)
 
-- Only Express is understood. Other frameworks get the generic secret, injection, dependency and config checks; route checks are reported as "not checked".
+- Only Express and NestJS are understood. Other frameworks get the generic secret, injection, dependency and config checks; route checks are reported as "not checked".
+- NestJS: the input validation check does not run (input arrives through `@Body()` and `@Param()`); `@Public()` routes behind a global guard can be reported as missing auth, so suppress them with a reason; the adapter has only been tested on fixtures, not on a real Nest codebase.
 - No LLM review or explain mode. Risk text is fixed per rule, not written for the specific project.
 - No hosted dashboard, accounts or shared history; history is a local file.
 - No runtime or dynamic analysis. It never boots the app.

@@ -5,15 +5,17 @@
 | Layer | What | Tool |
 |---|---|---|
 | Unit | Scorer, checklist roll-up, suppression parsing, config merge | vitest |
-| Rule tests | Each rule runs on `bad/` fixture (must fire, exact line) and `good/` fixture (must not fire) | vitest |
-| Adapter snapshots | Fixture Express apps -> expected `ProjectModel` JSON | vitest snapshots |
-| CLI integration | Spawn the CLI on fixtures; assert stdout, exit code, generated files | vitest |
+| Rule tests | Each rule has a must-fire case (checked by rule ID and line) and a must-not-fire case | vitest (`tests/rules.test.ts`) |
+| Adapter tests | Small Express apps -> expected routes, mounts and middleware | vitest (`tests/express.test.ts`) |
+| CLI integration | Call `main(argv, io)` with captured output and a fake audit; assert output, exit code, generated files | vitest (`tests/cli.test.ts`) |
 | Determinism | Run scan twice; JSON output must be byte-identical (modulo timestamp) | vitest |
 | Reference-project validation | Run on the author's real projects; every finding triaged true/false; FP count recorded per release | manual, logged in `tests/reference/RESULTS.md` |
 
 ## Fixtures
 
-`tests/fixtures/<rule-id>/{bad,good}/` plus `tests/fixtures/apps/` (whole small apps) and `tests/fixtures/clients/` (for `--all`). Fixtures must contain only fake secrets and no personal data.
+Fixtures are not stored on disk. Each test writes a throwaway project into the system temp folder (`tests/helpers.ts`) and deletes it afterwards. Fake credentials are assembled from fragments at runtime, so no secret-shaped string exists in the repository and secret scanners on the hosting platform are not triggered. Fixtures must never contain real secrets or personal data.
+
+Tests never use the network: the `npm audit` call is injected and replaced with recorded output.
 
 ## Non-deterministic parts (LLM, M6+)
 

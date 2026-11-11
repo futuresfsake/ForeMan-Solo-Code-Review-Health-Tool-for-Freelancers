@@ -1,11 +1,23 @@
 import { CATALOG } from "../rules/catalog.js";
 import type { ScanResult } from "../types.js";
+import type { Brand } from "./brand.js";
 import { escapeHtml as e, page } from "./html.js";
 import { open } from "./text.js";
 
 export interface ClientReportOptions {
   preparedBy?: string;
   clientName?: string;
+  brand?: Brand;
+}
+
+/** The accent is only used for borders, so any colour stays readable in light and dark mode. */
+function brandCss(brand: Brand | undefined): string {
+  let css = "";
+  if (brand?.accentColor) {
+    css += `.brand-header{border-top:5px solid ${brand.accentColor};padding-top:16px}h2{border-left:4px solid ${brand.accentColor};padding-left:10px}`;
+  }
+  if (brand?.logoDataUri) css += ".logo{display:block;max-height:56px;max-width:240px;margin-bottom:12px}";
+  return css;
 }
 
 const PRIORITY = {
@@ -43,8 +55,14 @@ export function renderClientHtml(result: ScanResult, options: ClientReportOption
     options.preparedBy ? `Prepared by ${e(options.preparedBy)}` : "",
   ].filter(Boolean);
 
-  const body = `<h1>Code review summary: ${e(result.project.name)}</h1>
+  const logo = options.brand?.logoDataUri
+    ? `<img class="logo" src="${e(options.brand.logoDataUri)}" alt="${e(options.preparedBy ? `${options.preparedBy} logo` : "Logo")}">\n`
+    : "";
+
+  const body = `<div class="brand-header">
+${logo}<h1>Code review summary: ${e(result.project.name)}</h1>
 <div class="muted">Automated review completed on ${e(date)}${lines.length ? ` · ${lines.join(" · ")}` : ""}</div>
+</div>
 
 <div class="card summary">
 <div><div><strong>${checked} automated check(s) were run on the project's code.</strong></div>
@@ -80,5 +98,5 @@ ${notChecked ? `<p class="muted">${notChecked} check(s) did not run on this proj
 <p class="muted">"Not confirmed" means the item cannot be verified from the code alone and should be confirmed separately.</p>
 </div>`;
 
-  return page(`Code review summary: ${result.project.name}`, body);
+  return page(`Code review summary: ${result.project.name}`, body, brandCss(options.brand));
 }

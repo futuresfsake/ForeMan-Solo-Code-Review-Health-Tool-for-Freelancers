@@ -27,6 +27,8 @@ interface UseArg {
   name: string;
   /** Absolute path of the project file this argument was imported from. */
   target?: string;
+  /** Name of a router created in the same file, e.g. `Router().use('/api', api)`. */
+  local?: string;
 }
 
 interface UseCall {
@@ -75,6 +77,24 @@ function requireSpec(init: ts.Expression): string | undefined {
   return undefined;
 }
 
+/**
+ * Finds the `express()` or `Router()` call at the bottom of a chain such as
+ * `Router().use(a).use('/api', b)`.
+ */
+function creationRoot(expr: ts.Expression, sf: ts.SourceFile): { call: ts.Node; kind: Kind } | undefined {
+  let cur = expr;
+  while (ts.isCallExpression(cur) || ts.isNewExpression(cur)) {
+    const callee = cur.expression;
+    const text = callee.getText(sf);
+    if (text === "express") return { call: cur, kind: "app" };
+    if (/(^|\.)Router$/.test(text)) return { call: cur, kind: "router" };
+    if (!ts.isPropertyAccessExpression(callee)) return undefined;
+    if (callee.name.text !== "use" && !HTTP_METHODS.has(callee.name.text)) return undefined;
+    cur = callee.expression;
+  }
+  return undefined;
+}
+
 function flatten(args: readonly ts.Expression[]): ts.Expression[] {
   return args.flatMap((a) => (ts.isArrayLiteralExpression(a) ? flatten(a.elements) : [a]));
 }
@@ -97,6 +117,10 @@ function analyzeFile(file: ParsedFile, byAbs: Map<string, ParsedFile>, warnings:
   const receivers = new Map<string, Kind>();
   const imports = new Map<string, string>();
   const functions = new Map<string, ts.Node>();
+  /** Start position of an `express()`/`Router()` call -> the variable it was assigned to. */
+  const creationNames = new Map<number, string>();
+  /** `router.use(item.path, item.route)` inside a loop over a route table. */
+  let tableUse: { pos: number; receiver: string; kind: Kind } | undefined;
 
   const bindRequire = (name: ts.BindingName, spec: string): void => {
     const target = resolveSpec(file.abs, spec, byAbs);
@@ -125,19 +149,41 @@ function analyzeFile(file: ParsedFile, byAbs: Map<string, ParsedFile>, warnings:
     if (spec) bindRequire(n.name, spec);
     if (!ts.isIdentifier(n.name)) return;
     if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) functions.set(n.name.text, init);
-    if (ts.isCallExpression(init) || ts.isNewExpression(init)) {
-      const callee = init.expression.getText(sf);
-      if (callee === "express") {
-        receivers.set(n.name.text, "app");
-        info.entryLine ??= lineOf(sf, n);
-      } else if (/(^|\.)Router$/.test(callee)) {
-        receivers.set(n.name.text, "router");
-      }
+    const created = creationRoot(init, sf);
+    if (created) {
+      receivers.set(n.name.text, created.kind);
+      creationNames.set(created.call.getStart(sf), n.name.text);
+      if (created.kind === "app") info.entryLine ??= lineOf(sf, n);
     }
   });
 
   const kindOf = (name: string): Kind | undefined =>
     receivers.get(name) ?? (FALLBACK_APP.test(name) ? "app" : FALLBACK_ROUTER.test(name) ? "router" : undefined);
+
+  /** The app or router a call chain hangs off: `app`, or an inline `Router()`. */
+  const rootOf = (expr: ts.Expression): { name: string; kind: Kind } | undefined => {
+    let cur = expr;
+    while (ts.isCallExpression(cur) && ts.isPropertyAccessExpression(cur.expression)) {
+      const name = cur.expression.name.text;
+      if (name !== "use" && !HTTP_METHODS.has(name)) break;
+      cur = cur.expression.expression;
+    }
+    if (ts.isIdentifier(cur)) {
+      const kind = kindOf(cur.text);
+      return kind ? { name: cur.text, kind } : undefined;
+    }
+    const created = creationRoot(cur, sf);
+    if (!created) return undefined;
+    const pos = created.call.getStart(sf);
+    return { name: creationNames.get(pos) ?? `<inline@${pos}>`, kind: created.kind };
+  };
+
+  /** The project file an argument was imported from, if any. */
+  const importTarget = (arg: ts.Expression): string | undefined => {
+    if (ts.isIdentifier(arg)) return imports.get(arg.text);
+    const spec = requireSpec(arg);
+    return spec ? resolveSpec(file.abs, spec, byAbs) : undefined;
+  };
 
   const addRoute = (method: string, routePath: string, receiver: string, handlerArgs: ts.Expression[], node: ts.Node): void => {
     const flat = flatten(handlerArgs);
@@ -177,26 +223,38 @@ function analyzeFile(file: ParsedFile, byAbs: Map<string, ParsedFile>, warnings:
     const method = n.expression.name.text;
     const target = n.expression.expression;
 
-    if (method === "use" && ts.isIdentifier(target)) {
-      const kind = kindOf(target.text);
-      if (!kind) return;
+    if (method === "use") {
+      const root = rootOf(target);
+      if (!root) return;
       const args = [...n.arguments];
+      // `router.use(item.path, item.route)`: the real mounts are in a table of
+      // { path, route } objects elsewhere in the file.
+      if (args.length >= 2 && args.every((a) => ts.isPropertyAccessExpression(a) && ts.isIdentifier(a.expression))) {
+        tableUse ??= { pos: n.getStart(sf), receiver: root.name, kind: root.kind };
+        return;
+      }
       const prefix = stringValue(args[0]);
       if (prefix !== undefined) args.shift();
-      const useArgs: UseArg[] = flatten(args).map((a) => {
-        const inlineSpec = requireSpec(a);
-        const imported = ts.isIdentifier(a) ? imports.get(a.text) : inlineSpec ? resolveSpec(file.abs, inlineSpec, byAbs) : undefined;
-        return { name: argName(a, sf), target: imported };
-      });
-      info.uses.push({ pos: n.getStart(sf), receiver: target.text, kind, prefix, args: useArgs });
+      const useArgs: UseArg[] = flatten(args).map((a) => ({
+        name: argName(a, sf),
+        target: importTarget(a),
+        local: ts.isIdentifier(a) && receivers.has(a.text) && a.text !== root.name ? a.text : undefined,
+      }));
+      info.uses.push({ pos: n.getStart(sf), receiver: root.name, kind: root.kind, prefix, args: useArgs });
       return;
     }
 
     if (!HTTP_METHODS.has(method)) return;
 
-    if (ts.isIdentifier(target)) {
-      if (!kindOf(target.text)) return;
-      const explicit = receivers.has(target.text);
+    const chained = ts.isIdentifier(target) ? undefined : routeChainBase(target);
+    if (chained) {
+      if (n.arguments.length > 0) addRoute(method, chained.path, chained.receiver, [...n.arguments], n);
+      return;
+    }
+
+    const root = rootOf(target);
+    if (root) {
+      const explicit = !ts.isIdentifier(target) || receivers.has(target.text);
       const args = [...n.arguments];
       // `app.get('view engine')` reads a setting; it is not a route.
       if (args.length < 2) return;
@@ -207,13 +265,26 @@ function analyzeFile(file: ParsedFile, byAbs: Map<string, ParsedFile>, warnings:
       } else if (!explicit && !/^[/*]/.test(routePath)) {
         return;
       }
-      addRoute(method, routePath ?? "<dynamic>", target.text, args.slice(1), n);
-      return;
+      addRoute(method, routePath ?? "<dynamic>", root.name, args.slice(1), n);
     }
-
-    const base = routeChainBase(target);
-    if (base && n.arguments.length > 0) addRoute(method, base.path, base.receiver, [...n.arguments], n);
   });
+
+  if (tableUse) {
+    const { pos, receiver, kind } = tableUse;
+    walk(sf, (n) => {
+      if (!ts.isObjectLiteralExpression(n)) return;
+      let prefix: string | undefined;
+      let mounted: ts.Expression | undefined;
+      for (const p of n.properties) {
+        if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue;
+        if (p.name.text === "path") prefix = stringValue(p.initializer);
+        else if (/^(route|router|routes|handler)$/.test(p.name.text)) mounted = p.initializer;
+      }
+      const target = mounted ? importTarget(mounted) : undefined;
+      if (prefix === undefined || !mounted || !target) return;
+      info.uses.push({ pos, receiver, kind, prefix, args: [{ name: argName(mounted, sf), target }] });
+    });
+  }
 
   return info;
 }
@@ -235,13 +306,29 @@ export function buildExpressModel(files: ParsedFile[], packageJson: Record<strin
     const info = infos.get(abs);
     return !!info && (info.routes.length > 0 || info.uses.length > 0);
   };
-  const isMount = (arg: UseArg, from: string): boolean => !!arg.target && arg.target !== from && isRouterFile(arg.target);
+  const isFileMount = (arg: UseArg, from: string): boolean => !!arg.target && arg.target !== from && isRouterFile(arg.target);
+  const isMount = (arg: UseArg, from: string): boolean => !!arg.local || isFileMount(arg, from);
 
   /** Middleware registered with a path-less `use()` on the same receiver, earlier in the file. */
   const fileLevel = (info: FileInfo, receiver: string, pos: number): string[] =>
     info.uses
       .filter((u) => u.receiver === receiver && u.prefix === undefined && u.pos < pos)
       .flatMap((u) => u.args.filter((a) => !isMount(a, info.file.abs)).map((a) => a.name));
+
+  /** Prefix and middleware a router gets from being mounted on another router in the same file. */
+  const localContext = (info: FileInfo, receiver: string, depth = 0): MountContext => {
+    const parent = info.uses.find((u) => u.receiver !== receiver && u.args.some((a) => a.local === receiver));
+    if (!parent || depth > 4) return { prefix: "", middleware: [] };
+    const outer = localContext(info, parent.receiver, depth + 1);
+    return {
+      prefix: joinPath(outer.prefix, parent.prefix ?? ""),
+      middleware: [
+        ...outer.middleware,
+        ...fileLevel(info, parent.receiver, parent.pos),
+        ...parent.args.filter((a) => !isMount(a, info.file.abs)).map((a) => a.name),
+      ],
+    };
+  };
 
   interface Mount extends MountContext {
     from: string;
@@ -254,17 +341,18 @@ export function buildExpressModel(files: ParsedFile[], packageJson: Record<strin
     const abs = info.file.abs;
     for (const use of info.uses) {
       const names = use.args.filter((a) => !isMount(a, abs)).map((a) => a.name);
-      const targets = use.args.filter((a) => isMount(a, abs));
+      const targets = use.args.filter((a) => isFileMount(a, abs));
+      const local = localContext(info, use.receiver);
       for (const t of targets) {
         mounts.push({
           from: abs,
           to: t.target!,
-          prefix: use.prefix ?? "",
-          middleware: [...fileLevel(info, use.receiver, use.pos), ...names],
+          prefix: joinPath(local.prefix, use.prefix ?? ""),
+          middleware: [...local.middleware, ...fileLevel(info, use.receiver, use.pos), ...names],
         });
       }
-      if (targets.length === 0 && use.prefix !== undefined && names.length > 0) {
-        scoped.push({ from: abs, prefix: use.prefix, names });
+      if (!use.args.some((a) => isMount(a, abs)) && use.prefix !== undefined && names.length > 0) {
+        scoped.push({ from: abs, prefix: joinPath(local.prefix, use.prefix), names });
       }
       if (use.kind === "app" && use.prefix === undefined) model.appMiddleware.push(...names);
     }
@@ -289,8 +377,9 @@ export function buildExpressModel(files: ParsedFile[], packageJson: Record<strin
     if (info.routes.length === 0) continue;
     for (const ctx of contextsOf(info.file.abs, new Set())) {
       for (const r of info.routes) {
-        const full = joinPath(ctx.prefix, r.path);
-        const middleware = [...ctx.middleware, ...fileLevel(info, r.receiver, r.pos), ...r.middleware];
+        const local = localContext(info, r.receiver);
+        const full = joinPath(joinPath(ctx.prefix, local.prefix), r.path);
+        const middleware = [...ctx.middleware, ...local.middleware, ...fileLevel(info, r.receiver, r.pos), ...r.middleware];
         for (const s of scoped) {
           for (const sctx of contextsOf(s.from, new Set())) {
             const scope = joinPath(sctx.prefix, s.prefix);

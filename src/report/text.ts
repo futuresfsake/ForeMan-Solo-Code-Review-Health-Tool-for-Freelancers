@@ -61,6 +61,7 @@ export function renderTerminal(result: ScanResult, s: Style): string {
       const hedge = f.confidence === "high" ? "" : s.dim(f.confidence === "medium" ? "  [likely]" : "  [worth a second look]");
       out.push(`  ${paint(SEVERITY_LABEL[f.severity].padEnd(12))} ${f.ruleId}  ${s.cyan(`${f.file}:${f.line}`)}${hedge}`);
       out.push(`  ${" ".repeat(12)} ${f.message}`);
+      out.push(s.dim(`  ${" ".repeat(12)} Why: ${f.risk}`));
       out.push(s.dim(`  ${" ".repeat(12)} Fix: ${f.remediation}`));
     }
     out.push("");
@@ -124,9 +125,9 @@ export function renderMarkdown(result: ScanResult): string {
   ];
   if (findings.length === 0) out.push("No open findings.", "");
   else {
-    out.push("| Severity | Confidence | Rule | Location | What | Fix |", "|---|---|---|---|---|---|");
+    out.push("| Severity | Confidence | Rule | Location | What | Why it matters | Fix |", "|---|---|---|---|---|---|---|");
     for (const f of findings) {
-      out.push(`| ${SEVERITY_LABEL[f.severity]} | ${f.confidence} | ${f.ruleId} | ${cell(f.file)}:${f.line} | ${cell(f.message)} | ${cell(f.remediation)} |`);
+      out.push(`| ${SEVERITY_LABEL[f.severity]} | ${f.confidence} | ${f.ruleId} | ${cell(f.file)}:${f.line} | ${cell(f.message)} | ${cell(f.risk)} | ${cell(f.remediation)} |`);
     }
     out.push("");
   }

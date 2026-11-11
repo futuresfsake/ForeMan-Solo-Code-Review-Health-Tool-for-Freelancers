@@ -3,12 +3,12 @@
 | Term | Definition |
 |---|---|
 | Adapter (framework adapter) | Small plugin that finds a framework's routes, middleware and models and emits a normalized model. One per framework. |
-| AST | Abstract syntax tree. Foreman parses code into it (ts-morph) instead of running the app. |
+| AST | Abstract syntax tree. Foreman Solo parses code into it (TypeScript compiler API) instead of running the app. |
 | Blocker / Should-fix / Nice-to-have | Severity tags on review comments. Blocker = do not merge/ship. |
 | Care mode | Scheduled recurring scan of a shipped project to catch new CVEs and config drift. Implemented via cron/GitHub Action, not a service. |
 | Check | A group of rules in one category (secrets, deps, config, ...). |
 | Client-ready report | Non-technical, brandable HTML summary of review work for the client. |
-| Confidence | high / medium / low on a finding. Deterministic rules are `high`; LLM findings may be lower. |
+| Confidence | high / medium / low on a finding. Exact matches are `high`; heuristic rules (name or pattern guesses) are `medium` or `low` and are worded as "likely" or "worth a second look". |
 | Context pass | The LLM reasoning layer fed with static findings, the diff and dependent files. |
 | Finding | One issue reported by a rule: id, severity, location, message, confidence, remediation. |
 | Go-live checklist | Fixed pass/fail gate of items that must all be green before handoff. |

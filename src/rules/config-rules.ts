@@ -50,6 +50,7 @@ export const configRule: Rule = {
 
     for (const file of model.files) {
       const sf = file.ast;
+      let openCorsReported = false;
 
       for (const a of stringAssignments(sf)) {
         const line = lineOf(sf, a.node);
@@ -74,6 +75,8 @@ export const configRule: Rule = {
         if (ts.isIdentifier(callee) && callee.text === "cors") {
           const arg = n.arguments[0] ? unwrap(n.arguments[0]) : undefined;
           if (!arg) {
+            if (openCorsReported) return;
+            openCorsReported = true;
             findings.push({ ruleId: "config/permissive-cors", file: file.path, line: lineOf(sf, n), message: "cors() is called with no options, which allows every origin." });
           } else if (ts.isObjectLiteralExpression(arg)) {
             const origin = property(arg, "origin");
@@ -122,7 +125,9 @@ export const httpsRule: Rule = {
   needsRoutes: true,
   run(model) {
     const deps = Object.keys({ ...(model.packageJson?.dependencies as object | undefined) });
-    if (deps.some((d) => HTTPS_EVIDENCE.test(d)) || model.files.some((f) => HTTPS_EVIDENCE.test(f.text))) return [];
+    // Commented-out code is not evidence.
+    const code = (text: string): string => text.replace(/\/\*[\s\S]*?\*\/|(^|[^:'"`\\])\/\/.*$/gm, "$1");
+    if (deps.some((d) => HTTPS_EVIDENCE.test(d)) || model.files.some((f) => HTTPS_EVIDENCE.test(code(f.text)))) return [];
     const anchor = model.entry ?? (model.routes[0] ? { file: model.routes[0].file, line: model.routes[0].line } : undefined);
     if (!anchor) return [];
     return [

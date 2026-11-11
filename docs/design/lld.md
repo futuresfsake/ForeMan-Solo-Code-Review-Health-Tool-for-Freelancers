@@ -1,32 +1,49 @@
 # Low-level design
 
-Contracts below are stable once released (NFR-10). TypeScript notation.
+Contracts below are stable once released (NFR-10). TypeScript notation. This page describes what is implemented unless a line says "planned".
+
+## Source layout
+
+| Path | Responsibility |
+|---|---|
+| `src/bin.ts` | Executable entry; sets the exit code |
+| `src/cli.ts` | Flags, orchestration, exit codes; `main(argv, io)` is testable without spawning |
+| `src/config.ts` | Defaults, loading and validation of `foreman.config.json` |
+| `src/loader.ts` | Walks the project, applies ignores, parses each file |
+| `src/adapters/express.ts` | Express routes, mounts and middleware into a normalized model |
+| `src/rules/catalog.ts` | Every rule ID with severity, confidence and fix text |
+| `src/rules/*.ts` | Rule groups: secrets, injection, routes (auth, validation, rate limit), config, deps |
+| `src/scan.ts` | Runs rules, applies suppressions and overrides, builds the result |
+| `src/score.ts` | Score formula and go-live checklist |
+| `src/history.ts` | `.foreman/history.json` and trend |
+| `src/report/text.ts`, `html.ts` | Terminal, Markdown, summary table and HTML output |
 
 ## CLI
 
 ```
-foreman scan [path]            default path = .
-  --all <glob...>             scan many projects, print summary table
-  --report <html|md>          write report file
-  --out <dir>                 report output dir (default ./foreman-report)
-  --format <text|json>        stdout format (default text)
-  --context <file>            project context file
-  --fail-under <0-100>        exit 1 if score below
-  --config <file>             default foreman.config.json
+foreman-solo scan [path]      default path = .
+  --all <paths...>            scan many project folders, print a summary table
+  --report <html|md>          also write a report file
+  --out <dir>                 report folder (default ./foreman-report)
+  --format <text|json>        what to print (default text)
+  --context <file>            project context file (reserved)
+  --fail-under <0-100>        exit 1 if the score is below this
+  --config <file>             default: foreman.config.json in the project
   --no-audit                  skip npm audit (offline)
-  --brand <file>              (M7) branding json
-foreman init                   write config + sample CI/cron
-foreman review [--diff <ref>]  (M6)
-foreman explain [path]         (M9)
+  --no-history                do not write .foreman/history.json
+
+planned: foreman-solo init, foreman-solo review (M6), foreman-solo explain (M9), --brand (M7)
 ```
+
+With `--all`, a pattern such as `./clients/*` is expanded by the tool itself, so it works the same in every shell. Reports go to `<out>/<project>/report.html` plus `<out>/summary.html`.
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Scan ok, no blockers, score >= threshold |
-| 1 | Blockers found or score below `--fail-under` |
-| 2 | Usage / config error |
+| 0 | Scan ok, no open blockers, score at or above the threshold |
+| 1 | Open blockers, or score below `--fail-under` (any project, with `--all`) |
+| 2 | Usage or config error |
 | 3 | Internal error |
 
 ## Core types
@@ -39,112 +56,131 @@ interface Finding {
   ruleId: string;            // "secrets/hardcoded-api-key"
   severity: Severity;
   confidence: Confidence;
-  file: string;              // repo-relative, forward slashes
+  file: string;              // project-relative, forward slashes
   line: number;
-  message: string;
+  message: string;           // secrets are redacted
   remediation: string;
-  checklistItems: string[];  // ids from checklist below
-  riskInMoney?: string;      // M7
+  checklistItems: string[];  // ids from the checklist below
   suppressed?: { reason: string };
 }
 
 interface RouteInfo {
   method: string; path: string; file: string; line: number;
   params: string[];
-  middleware: string[];      // resolved names in order
+  middleware: string[];      // mount-level, router-level, then route-level
+  handler?: ts.Node;         // inline or same-file function, when found
   handlerRef: string;
 }
 
 interface ProjectModel {
-  root: string;
+  root: string; name: string;
   framework: "express" | "unknown";
   routes: RouteInfo[];
   appMiddleware: string[];
-  files: SourceFileRef[];
-  packageJson: unknown;
-  context?: unknown;
+  entry?: { file: string; line: number };
+  files: ParsedFile[]; textFiles: TextFile[];
+  packageJson: Record<string, unknown> | null;
+  config: Config;
 }
 
 interface Rule {
-  id: string;
-  category: "secrets" | "injection" | "validation" | "auth" | "config" | "deps";
-  defaultSeverity: Severity;
-  run(model: ProjectModel, ctx: RuleContext): Finding[];
-}
-
-interface FrameworkAdapter {
-  name: string;
-  detect(root: string, pkg: unknown): boolean;
-  build(project: ParsedProject): ProjectModel;
+  ids: string[];             // every rule ID this group can emit
+  needsRoutes?: boolean;     // skipped (and reported as skipped) when no routes were found
+  run(model: ProjectModel, ctx: RuleContext): RawFinding[];
 }
 ```
 
-## MVP rule catalog
+Rules are pure functions of the model. They never touch the network; the dependency audit is injected through `RuleContext.audit` so tests can replace it.
 
-| Rule ID | Category | Default severity | Notes |
+## Express adapter
+
+- Receivers: variables assigned from `express()` (app) or `Router()` / `express.Router()` (router). Conventional names (`app`, `router`, `*Router`, `*Routes`) are accepted as a fallback only when the path is a string starting with `/`.
+- Routes: `X.get('/p', ...mw, handler)` and `X.route('/p').get(h).post(h)`.
+- Mounts: `app.use('/prefix', mw, router)` is resolved across files through relative `import` / `require`. A file counts as a router only if it declares routes or `use()` calls, so imported middleware is not mistaken for a mount.
+- Middleware order: a path-less `use()` applies to routes registered after it on the same receiver. A path-scoped `use('/admin', mw)` applies to routes under that path.
+- Not resolved: dynamic paths, routers built in loops, mounts through non-relative imports. These produce a warning or are simply not seen (see known-gaps.md).
+
+## Rule catalog
+
+| Rule ID | Default severity | Default confidence | Notes |
 |---|---|---|---|
-| secrets/hardcoded-api-key | secrets | blocker | known key patterns + entropy |
-| secrets/hardcoded-password | secrets | blocker | assignments to password/secret vars |
-| secrets/committed-env | secrets | blocker | `.env` tracked or not git-ignored |
-| injection/sql-concat | injection | blocker | concat/template into query call |
-| validation/unvalidated-param | validation | should-fix | req.params/body/query used raw in sinks |
-| auth/missing-on-sensitive-route | auth | blocker | heuristic: admin/write/user paths |
-| config/debug-enabled | config | should-fix | NODE_ENV dev default, `app.set('env')`, verbose errors |
-| config/no-https-redirect | config | should-fix | no redirect/HSTS (helmet) |
-| config/permissive-cors | config | should-fix | `origin: *` or `cors()` default with credentials |
-| config/default-credentials | config | blocker | example/default creds in config |
-| config/stack-trace-leak | config | should-fix | error handler sends `err.stack` |
-| config/no-rate-limit-auth | config | should-fix | login/auth routes lacking limiter |
-| deps/vulnerable | deps | by npm audit level | critical/high = blocker |
-| deps/no-lockfile | deps | nice-to-have | |
+| secrets/hardcoded-api-key | blocker | high | Well-known key formats and private key blocks, in source and JSON/YAML |
+| secrets/hardcoded-password | blocker | medium | Secret-like names assigned a literal, including `process.env.X \|\| "literal"` |
+| secrets/committed-env | blocker | high (medium if only un-ignored) | `.env*` tracked by git or not git-ignored; example files excluded |
+| injection/sql-concat | blocker | high with request data, else medium | Concatenation or template interpolation into a query call |
+| validation/unvalidated-param | should-fix | medium | Handler reads `req.params/body/query` with no validation in sight |
+| auth/missing-on-sensitive-route | blocker (medium) for sensitive paths; should-fix (low) for other writes | | No auth middleware at route, router, mount or app level |
+| config/debug-enabled | should-fix | high | Dev `start` script or hardcoded development env |
+| config/no-https-redirect | should-fix | low | No HTTPS or HSTS evidence anywhere in the code |
+| config/permissive-cors | should-fix | medium, high for explicit `*` | `cors()` with no options, `origin: '*'`, manual `*` header |
+| config/default-credentials | blocker | high | Default passwords, env fallbacks to defaults, default connection strings |
+| config/stack-trace-leak | should-fix | high | `err.stack` sent in a response |
+| config/no-rate-limit-auth | should-fix | medium | POST auth-like routes with no limiter |
+| deps/vulnerable | by npm audit level | high | critical/high = blocker, moderate = should-fix, low = nice-to-have |
+| deps/no-lockfile | nice-to-have | high | Dependencies but no lockfile |
 
 ## Go-live checklist
 
-| ID | Item | Satisfied when no unsuppressed findings from |
+| ID | Item | Fails on open findings from |
 |---|---|---|
-| GL-01 | Secrets removed from repo | secrets/* |
+| GL-01 | Secrets removed from repo | secrets/*, config/default-credentials |
 | GL-02 | Debug/dev mode off | config/debug-enabled |
 | GL-03 | HTTPS enforced | config/no-https-redirect |
-| GL-04 | Backups configured | manual attestation (`checklist.attest.GL-04` in config) |
+| GL-04 | Backups configured | nothing; cannot be checked from code |
 | GL-05 | Error pages don't leak stack traces | config/stack-trace-leak |
 | GL-06 | Admin/internal routes locked down | auth/missing-on-sensitive-route |
 | GL-07 | Rate limiting on auth routes | config/no-rate-limit-auth |
 
-Item states: `pass`, `fail`, `unverified` (cannot be checked statically). "Ready to ship" only when all are `pass`. GL-04 is `unverified` until attested; the report says so.
+States: `pass`, `fail`, `unverified`. An item is `unverified` when its rule could not run (no routes found, rule turned off) or it cannot be checked from code. An attestation in the config turns `unverified` into `pass` and is shown in the report; it never overrides `fail`. "Ready to ship" requires every item to be `pass`.
 
 ## Health score
 
 ```
-penalty = sum(weight[severity] * confidenceFactor) over unsuppressed findings
+penalty = sum(weight[severity] * confidenceFactor[confidence]) over open findings,
+          counting at most the 3 largest penalties per rule
 score   = clamp(round(100 - penalty), 0, 100)
 ```
 
-Defaults: blocker 15, should-fix 5, nice-to-have 1. confidenceFactor: high 1.0, medium 0.6, low 0.3. Per-rule cap of 3 findings counted toward penalty to avoid one repeated issue zeroing the score. Tunable in config.
+Defaults: blocker 15, should-fix 5, nice-to-have 1; high 1.0, medium 0.6, low 0.3. Suppressed findings do not count.
 
-## JSON report schema (v1)
+## JSON output (schemaVersion 1)
 
 ```json
 {
   "schemaVersion": 1,
-  "tool": "foreman", "toolVersion": "0.1.0",
-  "scannedAt": "ISO-8601", "project": {"name": "", "root": ""},
-  "score": 82, "trend": "up|flat|down|none",
-  "checklist": [{"id":"GL-01","status":"pass|fail|unverified"}],
+  "tool": "foreman-solo",
+  "toolVersion": "0.1.0",
+  "scannedAt": "2026-11-11T00:00:00.000Z",
+  "project": { "name": "acme-api", "framework": "express" },
+  "score": 82,
+  "trend": "up",
+  "previousScan": { "scannedAt": "2026-11-04T00:00:00.000Z", "score": 75 },
+  "readyToShip": false,
+  "checklist": [{ "id": "GL-01", "title": "Secrets removed from repo", "status": "pass" }],
   "findings": [],
-  "coverage": {"filesScanned": 0, "filesFailedToParse": 0, "rulesRun": [], "rulesSkipped": []}
+  "coverage": {
+    "filesScanned": 0,
+    "filesWithSyntaxErrors": 0,
+    "routesFound": 0,
+    "rulesRun": [],
+    "rulesSkipped": [{ "id": "deps/vulnerable", "reason": "dependency audit disabled for this run" }]
+  },
+  "warnings": []
 }
 ```
 
+`trend` is `up`, `flat`, `down` or `none` (first scan). No absolute paths appear in the output. With `--all` the output is `{ "schemaVersion": 1, "projects": [...] }`.
+
 ## History
 
-`.foreman/history.json` inside each scanned project (git-ignored by `foreman init`): array of `{scannedAt, score, findingCount}`. Trend = compare latest two.
+`.foreman/history.json` inside each scanned project: an array of `{ scannedAt, score, findingCount }`, capped at 200 entries. Nothing else is stored. Disable with `--no-history`.
 
 ## Suppression
 
-Inline `// foreman-ignore <ruleId>: <reason>` or config `ignore: [{ruleId, file, reason}]`. Reason is mandatory; suppressions are listed in the report.
+Inline `// foreman-ignore <ruleId>: <reason>` on the finding's line or the line above, or config `ignore: [{ ruleId, file, reason }]`. A reason is mandatory. Suppressed findings stay in the report with their reason and do not affect the score or checklist.
 
-## Post-MVP interfaces (sketch)
+## Post-MVP interfaces (sketch, not implemented)
 
-- `ContextBuilder(diff, model) -> {changedFiles, dependentFiles[], routes[], models[], staticFindings[]}`
-- `ReviewComment {file, line, severity, confidence, body, thread: Message[]}`
+- `ContextBuilder(diff, model) -> { changedFiles, dependentFiles[], routes[], staticFindings[] }`
+- `ReviewComment { file, line, severity, confidence, body, thread: Message[] }`
 - `LlmProvider.complete(prompt) -> string` (pluggable, user-supplied key)

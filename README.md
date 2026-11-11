@@ -119,7 +119,7 @@ Automated static review, not a security audit, penetration test or certification
   your repo
      |
      v
-  parse (TypeScript AST)  -->  framework adapter (Express first)
+  parse (TypeScript AST)  -->  framework adapter (Express, NestJS)
      |
      v
   rules: secrets · injection · validation · auth · config · dependencies
@@ -172,7 +172,8 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M5 | `scan --all`, history and trends, `init` | Done |
 | M7 | Plain-English risk, client report | Done (no logo branding) |
 | M8 | Ongoing-care workflow sample | Done (`init --ci`) |
-| M6, M9, M10 | LLM senior review, explain mode, more frameworks | Not started |
+| M10 | More frameworks | NestJS done on fixtures; Fastify and Next.js not started |
+| M6, M9 | LLM senior review, explain mode | Not started |
 
 Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 

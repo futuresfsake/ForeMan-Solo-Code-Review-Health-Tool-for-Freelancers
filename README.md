@@ -15,7 +15,7 @@ Scan any Node repo for security and quality problems, get a 0-100 health score a
 
 </div>
 
-> **Project status: alpha.** The scanner works and is covered by tests, but it has not yet been validated on real production codebases and it is not published to npm. Expect false positives and misses. Run it from a clone for now (see [Quick start](#quick-start)). Progress is tracked in [docs/plans/milestones.md](docs/plans/milestones.md).
+> **Project status: alpha.** The scanner works, is covered by tests, and has been checked by hand against three open-source Express apps ([results](docs/testing/validation-results.md)). It has not been proven on production codebases and it is not published to npm. Expect false positives and misses. Run it from a clone for now (see [Quick start](#quick-start)). Progress is tracked in [docs/plans/milestones.md](docs/plans/milestones.md).
 
 ---
 
@@ -40,11 +40,13 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 | **Health score** | A 0-100 score weighted by severity and confidence. |
 | **Go-live checklist** | A fixed gate: secrets removed, debug off, HTTPS, no stack-trace leaks, admin routes locked down, rate limiting on auth. |
 | **Dependency check** | `npm audit` results reformatted into findings. |
-| **Client-ready report** | A single self-contained HTML file you can attach to an invoice. |
+| **Client-ready report** | `--report client` writes a plain-English summary with no code or file paths, ready to attach to an invoice. `--report html` is the technical version. |
+| **Risk in plain English** | Every finding says why it matters to the business, not just what the code does. |
+| **Ongoing care** | `init --ci` adds a workflow that rescans on every push and once a week. |
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
 | **Private by design** | No accounts, no telemetry, nothing uploaded. |
 
-Planned after the MVP: simulated senior review (LLM, opt-in, with confidence levels and pushback), plain-English risk-in-money explanations, ongoing-care scheduling, explain-my-code mode, and NestJS, Fastify and Next.js support. See the [roadmap](#roadmap).
+Not built yet: simulated senior review (LLM, opt-in, with confidence levels and pushback), explain-my-code mode, and NestJS, Fastify and Next.js support. See the [roadmap](#roadmap).
 
 ## Quick start
 
@@ -58,8 +60,14 @@ npx foreman-solo scan --report=html
 # Scan every client project in a folder
 npx foreman-solo scan --all "./clients/*"
 
+# Write a plain-English summary for your client
+npx foreman-solo scan --report client
+
 # Fail a CI build if the score is too low
 npx foreman-solo scan --fail-under 80
+
+# Add a starter config and a weekly scan workflow to a project
+npx foreman-solo init --ci
 ```
 
 The package is not on npm yet, so the `npx` commands above will work only after the first release. Until then, run it from a clone:
@@ -160,9 +168,11 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M1 | CLI skeleton, project loader, parser | Done |
 | M2 | Express adapter | Done |
 | M3 | Rules, dependency check, score, checklist | Done |
-| M4 | Reports and validation on a real project (**gate**) | Reports done; real-project validation open |
-| M5 | `scan --all`, history and trends, `init` | `--all` and trends done; `init` open |
-| M6+ | LLM senior review, risk-in-money, care mode, explain mode, more frameworks | Later |
+| M4 | Reports and validation on real projects (**gate**) | Met on three open-source apps; author's own project pending |
+| M5 | `scan --all`, history and trends, `init` | Done |
+| M7 | Plain-English risk, client report | Done (no logo branding) |
+| M8 | Ongoing-care workflow sample | Done (`init --ci`) |
+| M6, M9, M10 | LLM senior review, explain mode, more frameworks | Not started |
 
 Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 
@@ -182,6 +192,7 @@ Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 | [Milestones](docs/plans/milestones.md) | Scope and exit criteria |
 | [Known gaps](docs/gaps/known-gaps.md) · [Risks](docs/gaps/risks.md) | What it won't do, what could go wrong |
 | [Testing strategy](docs/testing/testing-strategy.md) | How it is tested |
+| [Validation results](docs/testing/validation-results.md) | What it found on real open-source apps, checked by hand |
 | [Security and trust](docs/security-and-trust.md) | Data flow and limits |
 | [Legal notes](docs/legal.md) | Licence, disclaimers, trademarks, third-party software |
 | [Release process](docs/release-process.md) | Versioning and deprecation |

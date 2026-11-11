@@ -10,11 +10,12 @@
 ## Adding a rule
 
 1. Pick an ID: `<category>/<kebab-name>` (e.g. `secrets/hardcoded-api-key`). IDs are permanent.
-2. Implement it under `src/rules/<category>/` following the `Rule` interface in [lld.md](docs/design/lld.md).
-3. Add fixtures: `tests/fixtures/<rule-id>/bad/` (must fire) and `good/` (must not fire).
-4. Add the rule to the weight table in [configuration.md](docs/tech/configuration.md) if it affects the score.
-5. If it feeds a go-live item, map it in lld.md.
-6. Add a CHANGELOG entry.
+2. Add it to `src/rules/catalog.ts` with a severity, an honest confidence level and fix text.
+3. Implement it in a rule group under `src/rules/` following the `Rule` interface in [lld.md](docs/design/lld.md), and list its ID in the group's `ids`.
+4. Add a must-fire and a must-not-fire test in `tests/rules.test.ts`. Build fake secrets from fragments (see `tests/helpers.ts`); never commit a secret-shaped string.
+5. If it feeds a go-live item, map it in `src/score.ts` and in lld.md.
+6. Write the detection yourself. Do not copy patterns or rule text from other scanners unless their licence allows it and you say so in the PR.
+7. Add a CHANGELOG entry.
 
 ## Adding a framework adapter
 
@@ -28,6 +29,10 @@ Implement the `FrameworkAdapter` interface (routes, middleware, models). Rules m
 - Config file keys
 
 Breaking any of these requires a major version bump and a deprecation note ([release-process.md](docs/release-process.md)).
+
+## Licensing of contributions
+
+By contributing you confirm the work is your own and you license it under the project's MIT licence. See [docs/legal.md](docs/legal.md).
 
 ## Commits
 

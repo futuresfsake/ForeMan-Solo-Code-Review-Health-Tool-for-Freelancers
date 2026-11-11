@@ -4,7 +4,7 @@ import type { Config } from "../config.js";
 import type { ProjectModel, RouteInfo } from "../types.js";
 
 const AUTH_NAME = /auth|jwt|passport|protect|guard|verifytoken|isadmin|requirelogin|ensurelogged|requireuser|requirerole|permission|loggedin|acl/i;
-const NOT_AUTH = /limit|throttle|slowdown|initialize|session$|authrout/i;
+const NOT_AUTH = /limit|throttle|slowdown|initialize|session$|authrout|optional/i;
 const RATE_LIMIT_NAME = /limit|throttle|brute|slowdown/i;
 
 export function isAuthName(name: string, config: Config): boolean {

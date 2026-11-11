@@ -29,7 +29,7 @@ footer{margin-top:32px;font-size:13px;color:var(--muted);border-top:1px solid va
 ul{margin:0;padding-left:20px}a{color:var(--accent)}
 `;
 
-function page(title: string, body: string): string {
+export function page(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -67,7 +67,7 @@ export function renderHtml(result: ScanResult): string {
     .map(
       (f) => `<tr>
 <td><span class="tag ${sevClass[f.severity]}">${e(SEVERITY_LABEL[f.severity])}</span></td>
-<td>${e(f.message)}<div class="fix">Fix: ${e(f.remediation)}</div></td>
+<td>${e(f.message)}<div class="fix">Why it matters: ${e(f.risk)}</div><div class="fix">Fix: ${e(f.remediation)}</div></td>
 <td><code>${e(f.file)}:${f.line}</code><div class="muted"><code>${e(f.ruleId)}</code></div></td>
 <td>${e(f.confidence)}</td>
 </tr>`,

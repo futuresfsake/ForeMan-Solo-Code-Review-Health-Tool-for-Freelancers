@@ -28,17 +28,17 @@ A local, open-source **CLI only**. `npx foreman-solo scan` is the whole interfac
 
 | # | Capability | Delivered as | Phase |
 |---|---|---|---|
-| 1 | Simulated senior review (context-aware, stepwise, confidence-tagged, pushback) | `foreman review` | Post-MVP (M6) |
-| 2 | Go-live checklist | in `foreman scan` | MVP |
+| 1 | Simulated senior review (context-aware, stepwise, confidence-tagged, pushback) | `foreman-solo review` | Post-MVP (M6) |
+| 2 | Go-live checklist | in `foreman-solo scan` | MVP |
 | 3 | Client-ready report | `--report=html` | MVP (basic), M7 (branding) |
 | 4 | Risk-in-money terms | finding field | M7 |
 | 5 | Ongoing care mode | cron / GitHub Action sample | M8 |
-| 6 | Explain-my-code | `foreman explain` | M9 |
-| 7 | Multi-client view | `foreman scan --all` | MVP-late (M5) |
+| 6 | Explain-my-code | `foreman-solo explain` | M9 |
+| 7 | Multi-client view | `foreman-solo scan --all` | MVP-late (M5) |
 
 ## What "done" means for the MVP
 
-On a real live project of the author's own (capstone or Resibo), `foreman scan`:
+On a real live project of the author's own (capstone or Resibo), `foreman-solo scan`:
 
 - runs in seconds with no network except `npm audit`,
 - finds at least one true issue,

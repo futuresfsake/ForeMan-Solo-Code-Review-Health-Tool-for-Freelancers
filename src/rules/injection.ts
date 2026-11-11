@@ -43,12 +43,31 @@ function findDeclaration(sf: ts.SourceFile, name: string, before: number): ts.Va
 }
 
 export const injectionRule: Rule = {
-  ids: ["injection/sql-concat"],
+  ids: ["injection/sql-concat", "injection/code-eval"],
   run(model) {
     const findings: RawFinding[] = [];
     for (const file of model.files) {
       const sf = file.ast;
       walk(sf, (n) => {
+        const isEval = ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "eval";
+        const isNewFunction = ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "Function";
+        if (isEval || isNewFunction) {
+          const args = (n as ts.CallExpression | ts.NewExpression).arguments ?? [];
+          const dynamic = args.filter((a) => !ts.isStringLiteral(a) && !ts.isNoSubstitutionTemplateLiteral(a));
+          if (dynamic.length === 0) return;
+          const text = dynamic.map((a) => a.getText(sf)).join(", ");
+          const tainted = USER_INPUT.test(text);
+          findings.push({
+            ruleId: "injection/code-eval",
+            file: file.path,
+            line: lineOf(sf, n),
+            confidence: tainted ? "high" : "medium",
+            message: tainted
+              ? `${isEval ? "eval" : "new Function"} runs request data (${text.slice(0, 60)}) as code.`
+              : `${isEval ? "eval" : "new Function"} runs a dynamic value (${text.slice(0, 60)}) as code.`,
+          });
+          return;
+        }
         if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression)) return;
         if (!SINKS.has(n.expression.name.text) || n.arguments.length === 0) return;
         const first = unwrap(n.arguments[0]!);

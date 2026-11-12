@@ -1,16 +1,40 @@
 import fs from "node:fs";
 import path from "node:path";
 import { detectFramework, supportedLabels } from "./adapters/index.js";
-import type { Config } from "./config.js";
+import { DEFAULT_CONFIG, type Config } from "./config.js";
 import { matchesPath } from "./glob.js";
 import { loadProject, readPackageJson } from "./loader.js";
 import { CATALOG } from "./rules/catalog.js";
+import { npmrcNotes } from "./rules/deps.js";
 import { RULES } from "./rules/index.js";
 import { checklistItemsFor, computeScore, evaluateChecklist } from "./score.js";
+import { clipped } from "./text.js";
 import type { AuditRunner, Finding, ParsedFile, ProjectModel, RawFinding, ScanResult, Trend } from "./types.js";
 
 const SEVERITY_ORDER = { blocker: 0, "should-fix": 1, "nice-to-have": 2 } as const;
 const INLINE_IGNORE = /foreman-ignore\s+([a-z-]+\/[a-z-]+)\s*(?::\s*(.*?))?\s*(?:\*\/)?\s*$/;
+/** A suppression comment is short. Longer lines are not searched: the pattern is slow on them. */
+const MAX_IGNORE_LINE = 2000;
+
+/** How the "not checked" reason of a rule that crashed starts. The CLI turns it into exit code 3. */
+export const INTERNAL_ERROR = "internal error";
+
+/** True when a rule failed while scanning, so the result is incomplete. */
+export function ruleFailed(result: ScanResult): boolean {
+  return result.coverage.rulesSkipped.some((s) => s.reason.startsWith(INTERNAL_ERROR));
+}
+
+/** Config keys that decide what is scanned, what counts as a finding and how it is scored. */
+const SCAN_KEYS = ["ignorePaths", "failUnder", "audit", "sensitiveRoutes", "authMiddlewareNames", "weights", "confidenceFactor", "rules", "ignore", "checklist"] as const;
+
+/**
+ * Which of those keys differ from the defaults. A project you did not write
+ * can ship a config that hides its own problems (ignored folders, rules turned
+ * off, weights set to zero), so every report names what was changed.
+ */
+export function configChanges(config: Config): string[] {
+  return SCAN_KEYS.filter((key) => JSON.stringify(config[key]) !== JSON.stringify(DEFAULT_CONFIG[key]));
+}
 
 export interface ScanOptions {
   config: Config;
@@ -35,7 +59,9 @@ function inlineSuppression(file: ParsedFile | undefined, finding: RawFinding, wa
   if (!file) return undefined;
   const lines = file.text.split(/\r?\n/);
   for (const idx of [finding.line - 1, finding.line - 2]) {
-    const m = INLINE_IGNORE.exec(lines[idx] ?? "");
+    const line = lines[idx] ?? "";
+    if (line.length > MAX_IGNORE_LINE) continue;
+    const m = INLINE_IGNORE.exec(line);
     if (!m || m[1] !== finding.ruleId) continue;
     const reason = (m[2] ?? "").trim();
     if (reason === "") {
@@ -77,6 +103,7 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
   if (adapter.detected && !hasRoutes) {
     warnings.push(`${adapter.label} was detected but no routes were found; route checks did not run.`);
   }
+  if (options.audit) warnings.push(...npmrcNotes(absRoot));
 
   const skipped = new Map<string, string>();
   const ran = new Set<string>();
@@ -100,8 +127,10 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
       raw.push(...found.filter((f) => active.includes(f.ruleId)));
       for (const id of active) if (!skipped.has(id)) ran.add(id);
     } catch (err) {
-      for (const id of active) skipped.set(id, `internal error: ${(err as Error).message}`);
-      warnings.push(`Rule group ${rule.ids[0]} failed and was skipped: ${(err as Error).message}`);
+      // The result is incomplete. It is still returned, with every affected
+      // checklist item unverified, and the CLI exits with the internal-error code.
+      for (const id of active) skipped.set(id, `${INTERNAL_ERROR}: ${(err as Error).message}`);
+      warnings.push(`Rule group ${rule.ids[0]} failed and was skipped: ${(err as Error).message}. The result is incomplete.`);
     }
   }
 
@@ -114,20 +143,22 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
     seen.add(key);
     const meta = CATALOG[r.ruleId]!;
     const override = config.rules[r.ruleId];
+    // File names, route paths and variable names come from the project. They
+    // are cleaned here, once, so no report format can be driven by them.
     const finding: Finding = {
       ruleId: r.ruleId,
       severity: override && override !== "off" ? override : (r.severity ?? meta.severity),
       confidence: r.confidence ?? meta.confidence,
-      file: r.file,
+      file: clipped(r.file),
       line: r.line,
-      message: r.message,
+      message: clipped(r.message),
       risk: meta.risk,
       remediation: meta.remediation,
       checklistItems: checklistItemsFor(r.ruleId),
     };
     const configIgnore = config.ignore.find((i) => i.ruleId === r.ruleId && (!i.file || matchesPath(i.file, r.file)));
     const reason = configIgnore?.reason ?? inlineSuppression(byPath.get(r.file), r, warnings);
-    if (reason) finding.suppressed = { reason };
+    if (reason) finding.suppressed = { reason: clipped(reason) || "(no readable reason)" };
     findings.push(finding);
   }
   findings.sort(
@@ -139,7 +170,7 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
       a.message.localeCompare(b.message),
   );
 
-  const checklist = evaluateChecklist(findings, config, ran, hasRoutes);
+  const checklist = evaluateChecklist(findings, config, ran, hasRoutes, loaded.filesNotAnalysed).map((c) => (c.note ? { ...c, note: clipped(c.note) } : c));
   const trend: Trend = "none";
 
   return {
@@ -147,7 +178,7 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
     tool: "foreman-solo",
     toolVersion: options.toolVersion ?? toolVersion(),
     scannedAt: (options.now ?? new Date()).toISOString(),
-    project: { name, framework: model.framework },
+    project: { name: clipped(name, 120) || "project", framework: model.framework },
     score: computeScore(findings, config),
     trend,
     readyToShip: checklist.every((c) => c.status === "pass"),
@@ -156,10 +187,12 @@ export function scanProject(root: string, options: ScanOptions): ScanResult {
     coverage: {
       filesScanned: loaded.files.length,
       filesWithSyntaxErrors: loaded.filesWithSyntaxErrors,
+      filesNotAnalysed: loaded.filesNotAnalysed,
       routesFound: model.routes.length,
       rulesRun: [...ran].sort(),
-      rulesSkipped: [...skipped].map(([id, reason]) => ({ id, reason })).sort((a, b) => a.id.localeCompare(b.id)),
+      rulesSkipped: [...skipped].map(([id, reason]) => ({ id, reason: clipped(reason, 300) })).sort((a, b) => a.id.localeCompare(b.id)),
+      configChanges: configChanges(config),
     },
-    warnings,
+    warnings: warnings.map((w) => clipped(w, 600)),
   };
 }

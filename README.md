@@ -6,16 +6,19 @@
 
 Scan any Node repo for security and quality problems, get a 0-100 health score and a go-live checklist, and hand your client a report that shows the work you did.
 
+[![CI](https://github.com/futuresfsake/ForeMan-Solo-Code-Review-Health-Tool-for-Freelancers/actions/workflows/ci.yml/badge.svg)](https://github.com/futuresfsake/ForeMan-Solo-Code-Review-Health-Tool-for-Freelancers/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](docs/plans/milestones.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-339933.svg)](docs/tech/tech-stack.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-[Quick start](#quick-start) · [Features](#features) · [Documentation](#documentation) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[Quick start](#quick-start) · [Features](#features) · [Commands](#commands) · [Untrusted code](#scanning-code-you-did-not-write) · [Security](#security) · [Documentation](#documentation) · [Roadmap](#roadmap)
 
 </div>
 
-> **Project status: alpha.** The scanner works, is covered by tests, and has been checked by hand against three open-source Express apps ([results](docs/testing/validation-results.md)). It has not been proven on production codebases and it is not published to npm. Expect false positives and misses. Run it from a clone for now (see [Quick start](#quick-start)). Progress is tracked in [docs/plans/milestones.md](docs/plans/milestones.md).
+> **Project status: alpha, not on npm yet.** The scanner works, is covered by tests, and has been checked by hand against three open-source Express apps ([results](docs/testing/validation-results.md)). It has not been proven on production codebases. Expect false positives and misses. Run it from a clone ([Quick start](#quick-start)).
+>
+> **Do not run `npx foreman-solo` yet.** The package name is not registered on npm, so until this project publishes it, that command would download whatever someone else put there. This notice will be removed with the first release.
 
 ---
 
@@ -35,15 +38,16 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 
 | | |
 |---|---|
-| **One command** | `npx foreman-solo scan` in any Node repo. No sign-up, no server, no config. |
+| **One command** | `foreman-solo scan` in any Node repo. No sign-up, no server, no config. |
 | **Static analysis** | Parses your code into an AST. Never runs your app, never needs a database. |
 | **Health score** | A 0-100 score weighted by severity and confidence. |
-| **Go-live checklist** | A fixed gate: secrets removed, debug off, HTTPS, no stack-trace leaks, admin routes locked down, rate limiting on auth. |
+| **Go-live checklist** | A fixed gate: secrets removed, debug off, HTTPS, no stack-trace leaks, admin routes locked down, rate limiting on auth. An item passes only if every check behind it actually ran. |
 | **Dependency check** | `npm audit` results reformatted into findings. |
 | **Client-ready report** | `--report client` writes a plain-English summary with no code or file paths, ready to attach to an invoice, with your logo and colour if you set them in the config. `--report html` is the technical version. |
 | **Risk in plain English** | Every finding says why it matters to the business, not just what the code does. |
 | **Ongoing care** | `init --ci` adds a workflow that rescans on every push and once a week. |
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
+| **Safe on inherited code** | The project you scan is treated as untrusted: nothing in it is executed, nothing is written through its links, and its own config cannot quietly narrow the scan. |
 | **Private by design** | No accounts, no telemetry, nothing uploaded. |
 
 Experimental: `foreman-solo review` asks a local model to review your current git changes, with the scan's findings as facts, a confidence level on every comment, and a way to push back. Experimental too: `foreman-solo explain` walks you through an unfamiliar project. Not built yet: Fastify and Next.js support. See the [roadmap](#roadmap).
@@ -52,47 +56,71 @@ Experimental: `foreman-solo review` asks a local model to review your current gi
 
 ## Quick start
 
-```bash
-# Scan the current project
-npx foreman-solo scan
-
-# Also write a static HTML report
-npx foreman-solo scan --report=html
-
-# Scan every client project in a folder
-npx foreman-solo scan --all "./clients/*"
-
-# Write a plain-English summary for your client
-npx foreman-solo scan --report client
-
-# Fail a CI build if the score is too low
-npx foreman-solo scan --fail-under 80
-
-# Add a starter config and a weekly scan workflow to a project
-npx foreman-solo init --ci
-
-# Experimental: have a local model (Ollama) review your uncommitted changes
-ollama pull qwen2.5-coder:7b
-npx foreman-solo review --dry-run        # see exactly what would be sent
-npx foreman-solo review                  # run the review
-npx foreman-solo review --reply 1 --message "this is capped upstream"
-
-# Experimental: a plain-language walkthrough of a project you have just been handed
-npx foreman-solo explain --dry-run       # see exactly what would be sent
-npx foreman-solo explain
-```
-
-The package is not on npm yet, so the `npx` commands above will work only after the first release. Until then, run it from a clone:
+The package is not on npm yet, so run it from a clone:
 
 ```bash
 git clone https://github.com/futuresfsake/ForeMan-Solo-Code-Review-Health-Tool-for-Freelancers.git foreman-solo
 cd foreman-solo
-npm install
+npm ci
 npm run build
+
+# Scan a project
 node dist/bin.js scan /path/to/your/project
+
+# First scan of code someone else wrote: ignore the config that came with it
+node dist/bin.js scan /path/to/their/project --no-project-config
 ```
 
-Requires Node 20 or newer. Developed on Windows; macOS and Linux are expected to work but are not yet tested in CI.
+Requires Node 20 or newer. CI runs the tests on Windows, macOS and Linux with Node 20, 22 and 24.
+
+To type `foreman-solo` instead of `node dist/bin.js`, run `npm link` once in the clone. The examples below use the short form.
+
+## Commands
+
+```bash
+# Scan the current project
+foreman-solo scan
+
+# Also write a report: html (technical), md, or client (plain English)
+foreman-solo scan --report html
+foreman-solo scan --report client
+
+# Scan every client project in a folder
+foreman-solo scan --all "./clients/*"
+
+# Fail a CI build if the score is too low
+foreman-solo scan --fail-under 80
+
+# Machine-readable output
+foreman-solo scan --format json
+
+# Offline: skip the npm audit dependency check
+foreman-solo scan --no-audit
+
+# Add a starter config and a weekly scan workflow to a project
+foreman-solo init --ci
+
+# Experimental: have a local model (Ollama) review your uncommitted changes
+ollama pull qwen2.5-coder:7b
+foreman-solo review --dry-run        # see exactly what would be sent
+foreman-solo review                  # run the review
+foreman-solo review --reply 1 --message "this is capped upstream"
+
+# Experimental: a plain-language walkthrough of a project you have just been handed
+foreman-solo explain --dry-run       # see exactly what would be sent
+foreman-solo explain
+```
+
+Exit codes, for scripts and CI:
+
+| Code | Meaning |
+|---|---|
+| 0 | Scan complete, no open blockers, score at or above the threshold |
+| 1 | Open blockers, or score below `--fail-under` |
+| 2 | Usage or config error |
+| 3 | Internal error, or a check failed partway. The result is incomplete; do not treat it as clean |
+
+Every flag: [docs/design/lld.md](docs/design/lld.md#cli).
 
 ## Example output
 
@@ -101,11 +129,14 @@ Abridged output from scanning a small demo app:
 ```
 Foreman Solo  ·  demo-shop-api  ·  Express
 
-Health score   37 / 100   (first scan)
+Health score   65 / 100   (first scan)
 
-Findings (11)
+Findings (7)
   BLOCKER      auth/missing-on-sensitive-route  routes/admin.js:2  [likely]
                DELETE /admin/users/:id is under "/admin" and has no authentication middleware.
+               Why: If this action really is reachable without logging in, anyone who finds the
+               address could view or change data meant for staff or account owners.
+               Fix: Add authentication middleware to this route or its router.
   BLOCKER      injection/sql-concat  server.js:10
                SQL query is built by inserting request data (req.body.email) directly into the string.
   SHOULD-FIX   config/permissive-cors  server.js:5  [likely]
@@ -115,12 +146,19 @@ Findings (11)
   ...
 
 Go-live checklist
-  [ ] GL-01  Secrets removed from repo  (1 open finding(s))
+  [x] GL-01  Secrets removed from repo
+  [x] GL-02  Debug/dev mode off
+  [ ] GL-03  HTTPS enforced  (1 open finding(s))
   [?] GL-04  Backups configured  (cannot be checked from code; attest it in the config if it is done)
+  [x] GL-05  Error pages don't leak stack traces
   [ ] GL-06  Admin/internal routes locked down  (1 open finding(s))
-  ...
+  [ ] GL-07  Rate limiting on auth routes  (1 open finding(s))
 
-Not ready to ship: 6 failing, 1 unverified checklist item(s).
+Not ready to ship: 3 failing, 1 unverified checklist item(s).
+
+Checked 3 file(s), 2 route(s), 14 rule(s).
+The config in effect changes the scan: ignorePaths. If it came with the project, read it, or use --no-project-config to scan with the defaults.
+Not checked: deps/vulnerable (dependency audit disabled for this run).
 
 Automated static review, not a security audit, penetration test or certification.
 ```
@@ -158,7 +196,26 @@ Zero setup works. To tune it, add `foreman.config.json`:
 }
 ```
 
-Full reference: [docs/tech/configuration.md](docs/tech/configuration.md).
+Whenever a config changes what is scanned or how it is scored, every report says which keys did. Full reference: [docs/tech/configuration.md](docs/tech/configuration.md).
+
+## Scanning code you did not write
+
+Foreman Solo is made to be pointed at code you were handed, so it assumes the project may have been built to attack or mislead it:
+
+- **Nothing in the project is run.** Not its code, not a program named in its git settings, not a `git.exe` or `npm.cmd` left in its folder.
+- **Nothing is written through a link**, and a config cannot send report files outside the folder you run the scan from.
+- **Its own config is visible and optional.** The output names every setting that narrowed the scan, and `--no-project-config` ignores the file.
+- **A scan that could not finish does not look finished.** A file that could not be analysed is named in a warning, the checklist items it affects show as unverified, and a failed check gives exit code 3.
+- **Its text cannot take over your terminal or a report.** Names and paths are cleaned before they are printed or written.
+
+A short routine for a first scan:
+
+1. `foreman-solo scan --no-project-config`
+2. Read every `Warning:` line. A skipped or unreadable file is where a problem would hide.
+3. Treat `[?]` on the checklist as "not checked", not as "probably fine".
+4. If the project has an `.npmrc`, read it before trusting the dependency result.
+
+What the tool does not do: it does not stop a project from hiding code in a file the output tells you was skipped, ignored or suppressed. Details: [docs/security-and-trust.md](docs/security-and-trust.md#projects-you-did-not-write).
 
 ## Privacy and trust
 
@@ -168,6 +225,14 @@ Full reference: [docs/tech/configuration.md](docs/tech/configuration.md).
 - Foreman Solo is **not** a security audit, penetration test or certification. A high score means the checked rules found little, nothing more.
 
 Details: [docs/security-and-trust.md](docs/security-and-trust.md).
+
+## Security
+
+The tool itself was reviewed on 2026-11-12 against a hostile scanned project. Nine weaknesses were found in the code and fixed, each with a regression test; four repository settings are still open, the first being to register the npm name. Everything found, how it was confirmed and what remains is in [docs/security/security-audit.md](docs/security/security-audit.md). This was a self-review by the author, not an independent audit.
+
+What guards each change (tests, self-scan, dependency and signature checks, pinned CI actions, CodeQL, git hooks): [docs/security/safeguards.md](docs/security/safeguards.md).
+
+Found a vulnerability? Please report it privately: [SECURITY.md](SECURITY.md).
 
 ## Legal
 
@@ -183,12 +248,12 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M4 | Reports and validation on real projects (**gate**) | Met on three open-source apps; author's own project pending |
 | M5 | `scan --all`, history and trends, `init` | Done |
 | M7 | Plain-English risk, branded client report | Done |
-| M8 | Ongoing-care workflow sample | Done (`init --ci`) |
+| M8 | Ongoing-care workflow sample | Done (`init --ci`); needs the npm release to run |
 | M10 | More frameworks | NestJS done on fixtures; Fastify and Next.js not started |
 | M6 | LLM review on a local model | Built, experimental (`review`) |
 | M9 | `foreman-solo explain` | Built, experimental |
 
-Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
+Next: register and publish the npm package, then validation on a production codebase. Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 
 ## Documentation
 
@@ -198,8 +263,8 @@ Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 | [Glossary](docs/glossary.md) | Domain terms |
 | [Functional requirements](docs/requirements/functional.md) | FR-01 to FR-30 |
 | [Non-functional requirements](docs/requirements/non-functional.md) | NFR-01 to NFR-14 |
-| [High-level design](docs/design/hld.md) | Components and data flow |
-| [Low-level design](docs/design/lld.md) | CLI spec, types, rules, schema |
+| [High-level design](docs/design/hld.md) | Components, data flow, trust boundary |
+| [Low-level design](docs/design/lld.md) | CLI spec, types, rules, schema, handling of untrusted input |
 | [Tech stack](docs/tech/tech-stack.md) | Choices and what was rejected |
 | [Configuration](docs/tech/configuration.md) | Config file, flags, env vars |
 | [Decisions (ADRs)](docs/decisions/adr) | Why things are the way they are |
@@ -207,14 +272,24 @@ Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 | [Known gaps](docs/gaps/known-gaps.md) · [Risks](docs/gaps/risks.md) | What it won't do, what could go wrong |
 | [Testing strategy](docs/testing/testing-strategy.md) | How it is tested |
 | [Validation results](docs/testing/validation-results.md) | What it found on real open-source apps, checked by hand |
-| [Security and trust](docs/security-and-trust.md) | Data flow and limits |
+| [Security and trust](docs/security-and-trust.md) | Data flow, untrusted projects, limits |
+| [Security review](docs/security/security-audit.md) | Findings, fixes and open items from the 2026-11-12 review |
+| [Safeguards](docs/security/safeguards.md) | The free tools and settings that protect the project |
 | [Legal notes](docs/legal.md) | Licence, disclaimers, trademarks, third-party software |
-| [Release process](docs/release-process.md) | Versioning and deprecation |
+| [Release process](docs/release-process.md) | Versioning, publishing, deprecation |
 | [FAQ](docs/faq.md) | Common questions |
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule or a framework adapter without breaking public contracts, then open an issue or a pull request using the provided templates.
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a rule or a framework adapter without breaking public contracts, and for the four rules that apply to any code touching files, programs or output.
+
+```bash
+npm ci
+npm run hooks    # once per clone: pre-commit secret check, pre-push full check
+npm run check    # types, tests, build, self-scan, package contents, dependency audit
+```
+
+Then open an issue or a pull request using the provided templates.
 
 ## License
 

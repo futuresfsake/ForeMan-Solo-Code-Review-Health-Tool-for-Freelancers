@@ -1,5 +1,5 @@
 import type { ScanResult } from "../types.js";
-import { DISCLAIMER, SEVERITY_LABEL, TREND_LABEL, open, verdict, type SummaryRow } from "./text.js";
+import { DISCLAIMER, SEVERITY_LABEL, TREND_LABEL, limits, open, verdict, type SummaryRow } from "./text.js";
 
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -29,11 +29,21 @@ footer{margin-top:32px;font-size:13px;color:var(--muted);border-top:1px solid va
 ul{margin:0;padding-left:20px}a{color:var(--accent)}
 `;
 
+/**
+ * A second line of defence behind the escaping: even if text from a scanned
+ * project ever reached the page as markup, the browser would run no script,
+ * load nothing from the network and submit no form. Only the page's own
+ * inline styles and an embedded (`data:`) logo are allowed.
+ */
+const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
+
 export function page(title: string, body: string, extraCss = ""): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${CSP}">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(title)}</title>
 <style>${CSS}${extraCss}</style>
@@ -75,6 +85,7 @@ export function renderHtml(result: ScanResult): string {
     .join("\n");
 
   const notes = [
+    ...limits(result).map((l) => e(l)),
     ...result.coverage.rulesSkipped.map((s) => `Not checked: <code>${e(s.id)}</code> (${e(s.reason)})`),
     ...result.warnings.map((w) => `Warning: ${e(w)}`),
   ];

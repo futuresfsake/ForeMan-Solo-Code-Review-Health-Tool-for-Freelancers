@@ -32,7 +32,9 @@ export interface ContextInput {
 }
 
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
-const IMPORT = /(?:from|import|require)\s*\(?\s*['"](\.[^'"]*)['"]/g;
+// The space before and after "(" is matched in one place each, so a long run of
+// spaces after "import" cannot be split in many ways (which made matching slow).
+const IMPORT = /(?:from|import|require)\s*(?:\(\s*)?['"](\.[^'"]*)['"]/g;
 
 function resolveImport(from: string, spec: string, known: Set<string>): string | undefined {
   const base = path.posix.normalize(path.posix.join(path.posix.dirname(from), spec));

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Runs the same checks as CI before anything leaves this machine: types, tests,
+# build, a scan of this repository with the tool itself, and a dependency audit.
+# Turn the hooks on once per clone with:  npm run hooks
+# Skip once, when you have a reason, with:  git push --no-verify
+
+npm run check || {
+  echo "pre-push: the checks failed, so nothing was pushed." >&2
+  exit 1
+}

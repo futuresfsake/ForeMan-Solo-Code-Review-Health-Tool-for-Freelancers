@@ -95,6 +95,8 @@ ${result.checklist.map((c) => `<tr><td>${e(c.title)}</td><td><span class="tag ${
 <div class="card">
 <p>This summary was produced by an automated tool that reads the project's source code. It checks for a fixed list of common problems. It does not test the running system, and it cannot find every kind of problem.</p>
 ${notChecked ? `<p class="muted">${notChecked} check(s) did not run on this project, so those areas were not reviewed.</p>` : ""}
+${result.coverage.filesNotAnalysed ? `<p class="muted">${result.coverage.filesNotAnalysed} source file(s) could not be analysed by the tool and were not reviewed.</p>` : ""}
+${result.coverage.configChanges.length ? `<p class="muted">The review used project-specific settings that change what is checked (${result.coverage.configChanges.map((c) => e(c)).join(", ")}).</p>` : ""}
 <p class="muted">"Not confirmed" means the item cannot be verified from the code alone and should be confirmed separately.</p>
 </div>`;
 

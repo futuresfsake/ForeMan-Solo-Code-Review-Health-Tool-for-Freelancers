@@ -143,8 +143,8 @@ Rules are pure functions of the model. They never touch the network; the depende
 
 | Rule ID | Default severity | Default confidence | Notes |
 |---|---|---|---|
-| secrets/hardcoded-api-key | blocker | high | Well-known key formats and private key blocks, in source and JSON/YAML |
-| secrets/hardcoded-password | blocker | medium | Secret-like names assigned a literal, including `process.env.X \|\| "literal"`. Letters-only values and values equal to their own name are skipped unless they are an env fallback |
+| secrets/hardcoded-api-key | blocker | high | Well-known key formats, private key blocks and literal JSON Web Tokens, in source and JSON/YAML |
+| secrets/hardcoded-password | blocker | medium | A non-default password in a connection string (`scheme://user:pass@host`), and secret-like names assigned a literal, including `process.env.X \|\| "literal"`. Letters-only values and values equal to their own name are skipped unless they are an env fallback |
 | secrets/committed-env | blocker | high (medium if only un-ignored) | `.env*` tracked by git or not git-ignored; example files excluded |
 | injection/sql-concat | blocker | high with request data, else medium | Concatenation or template interpolation into a query call |
 | injection/code-eval | blocker | high with request data, else medium | `eval` or `new Function` on a non-literal value |

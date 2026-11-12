@@ -6,7 +6,7 @@ import { ENV_FILE } from "../loader.js";
 import type { RawFinding, Rule } from "../types.js";
 import { DEFAULT_CREDENTIALS, NOT_A_SECRET_NAME, SECRET_NAME, redact, stringAssignments } from "./shared.js";
 
-const KEY_PATTERNS: { label: string; re: RegExp }[] = [
+export const KEY_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "AWS access key ID", re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/ },
   { label: "Stripe live secret key", re: /\b[sr]k_live_[0-9a-zA-Z]{16,}\b/ },
   { label: "GitHub token", re: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b/ },

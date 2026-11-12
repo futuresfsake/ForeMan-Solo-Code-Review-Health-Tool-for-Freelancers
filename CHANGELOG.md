@@ -25,6 +25,7 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 ### Security
 - Git settings that come with a project can no longer run a program. `scan` and `review` call git with the file-system monitor and hooks switched off; `git diff` also runs without external diff or text-conversion programs, without entering submodules, and with every configured content filter disabled. Before this, a project handed over with its `.git` folder could run a program on the machine during `scan` (when a `.env` file exists) or `review`.
 - The LLM layer never follows a redirect, and refuses Ollama cloud models (names ending in `cloud`) in the config and in `--model`, so code cannot leave the machine that way.
+- The scan now reports passwords inside connection strings (`secrets/hardcoded-password`) and literal JSON Web Tokens (`secrets/hardcoded-api-key`) as findings, with the value never shown.
 - More secrets are masked before a prompt is built: passwords inside connection strings, JSON Web Tokens and literal `Bearer` tokens.
 - `review --reply` only opens source files inside the project. A `.foreman/review.json` that came with a project can no longer make it send `.env` or a linked file to the model.
 - Text from the model, and from a saved review, is stripped of control and text-direction characters before it is saved or printed.

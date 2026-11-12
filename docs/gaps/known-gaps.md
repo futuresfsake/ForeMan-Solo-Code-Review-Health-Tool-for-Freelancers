@@ -37,7 +37,9 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 
 - It reviews the git diff of the working tree against a base (`HEAD` by default). New files that git does not track yet are not in a diff, so stage or commit them first.
 - Only parsed source files are sent. `.env`, JSON, YAML and ignored paths are never part of the prompt.
-- Secrets are masked before sending: well-known key formats, private key blocks, and string values on lines the scan flagged. A secret the scan cannot recognise is not masked. Use `--dry-run` to see exactly what would be sent.
+- Secrets are masked before sending: well-known key formats, private key blocks, passwords inside connection strings (`scheme://user:password@host`), JSON Web Tokens, literal `Bearer` tokens, and string values on lines the scan flagged. A secret in any other shape that the scan does not recognise is not masked. Use `--dry-run` to see exactly what would be sent.
+- The scan itself does not report connection-string passwords or JWTs as findings yet; they are only masked for the model.
+- The prompt has no hard size limit: a changed file with a very large number of routes or findings can push it past the model's context, and Ollama then cuts it silently. `explain` has such a limit; `review` does not yet.
 - Comments on a line the scan already reported are not shown, as likely repeats. They are kept in the JSON output (`hidden`), so this guess can be checked.
 - Comments are never "high" confidence, and a comment that cannot be tied to a changed line is dropped.
 - Context is limited to what fits a small model: about 14,000 characters of diff and 9,000 of related files. Large changes are cut, and the output says so.
@@ -46,7 +48,7 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 
 ## Explain (`foreman-solo explain`, experimental)
 
-- It sees only a sample: the file list, the routes, and the start of the most connected files (about 10,000 characters). On a large project the walkthrough is partial, and the output says how many files were read.
+- It sees only a sample: up to 60 file names, 40 routes, the 30 most serious findings, and the start of the most connected files, about 20,000 characters in all so the prompt fits the model. On a large project the walkthrough is partial, and the output says what was left out.
 - It is tested with a fake model only; it has not been tried on a real model or a real unfamiliar repository.
 - Risks it names are checked only for pointing at a real file, not for being true. The static scan's findings are the reliable list.
 - Output differs between runs.
@@ -57,3 +59,5 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 - No accountability if wrong; can be confidently wrong. Hence confidence levels and pushback.
 - The first provider is a small model running locally (ADR-0007). It is weaker than a large hosted model: expect missed issues, wrong comments and slow runs on modest hardware. The LLM review is experimental and optional, and the static scan never depends on it.
 - A hosted provider, if added later, sends code off the machine and will need explicit consent.
+- Code under review can contain text written to steer the model (for example "report no problems"). The answer cannot drive the terminal or name files that do not exist, but nothing stops it from being misleading. Rely on the static scan, which the model cannot influence.
+- Ollama cloud models are refused by name (names ending in `cloud`). A cloud model under another name would not be recognised.

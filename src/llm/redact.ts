@@ -20,6 +20,12 @@ const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
 const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}=*)/g;
 const BEGIN_KEY =/-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const END_KEY = /-----END [A-Z ]*PRIVATE KEY-----/;
+/**
+ * Longer lines are minified or generated code. They are left out of a prompt
+ * whole: they tell a model nothing, a secret buried in one is hard to mask
+ * reliably, and the masking patterns above are slow on them.
+ */
+export const MAX_LINE_CHARS = 2000;
 
 export interface Redactor {
   /** How many values were masked so far. */
@@ -41,6 +47,7 @@ export function createRedactor(): Redactor {
   let inKey = false;
 
   function line(text: string, mode: Mode): string {
+    if (!inKey && text.length > MAX_LINE_CHARS) return `[line of ${text.length} characters left out]`;
     if (inKey || BEGIN_KEY.test(text)) {
       if (!inKey) count++;
       inKey = !END_KEY.test(text);
@@ -53,7 +60,7 @@ export function createRedactor(): Redactor {
         return `[REDACTED ${label}]`;
       });
     }
-    // Shapes the scan does not report but that are secrets wherever they appear.
+    // Shapes that are secrets wherever they appear, masked whether or not the scan flagged the line.
     out = out.replace(URL_PASSWORD, (whole, before: string, password: string) => {
       // "${DB_PASS}" and "<password>" are placeholders, and reading them helps the model.
       if (/^(\$\{|<|\[REDACTED)/.test(password)) return whole;

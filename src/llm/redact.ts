@@ -12,7 +12,13 @@ export type Mode = "flagged" | "clean" | "guess";
 const SECRETISH = /pass(?:word|wd)?|secret|token|credential|api[_-]?key|private/i;
 const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
 const KEY_GLOBAL = KEY_PATTERNS.filter((p) => p.label !== "Private key").map((p) => ({ label: p.label, re: new RegExp(p.re.source, "g") }));
-const BEGIN_KEY = /-----BEGIN [A-Z ]*PRIVATE KEY-----/;
+/** The password in "scheme://user:password@host". */
+const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@'"`]+):([^\s@/'"`]+)@/gi;
+/** A JSON Web Token: three base64url parts, the first two starting with an encoded "{". */
+const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
+/** A literal token after "Bearer ". */
+const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}=*)/g;
+const BEGIN_KEY =/-----BEGIN [A-Z ]*PRIVATE KEY-----/;
 const END_KEY = /-----END [A-Z ]*PRIVATE KEY-----/;
 
 export interface Redactor {
@@ -47,6 +53,22 @@ export function createRedactor(): Redactor {
         return `[REDACTED ${label}]`;
       });
     }
+    // Shapes the scan does not report but that are secrets wherever they appear.
+    out = out.replace(URL_PASSWORD, (whole, before: string, password: string) => {
+      // "${DB_PASS}" and "<password>" are placeholders, and reading them helps the model.
+      if (/^(\$\{|<|\[REDACTED)/.test(password)) return whole;
+      count++;
+      return `${before}:[REDACTED]@`;
+    });
+    out = out.replace(JWT, () => {
+      count++;
+      return "[REDACTED token]";
+    });
+    out = out.replace(BEARER, (whole, prefix: string, token: string) => {
+      if (token.startsWith("[REDACTED")) return whole;
+      count++;
+      return `${prefix}[REDACTED]`;
+    });
     if (mode === "flagged" || (mode === "guess" && SECRETISH.test(out))) {
       out = out.replace(STRING_LITERAL, (whole, quote: string, value: string) => {
         if (value.length < 8 || value.startsWith("[REDACTED")) return whole;

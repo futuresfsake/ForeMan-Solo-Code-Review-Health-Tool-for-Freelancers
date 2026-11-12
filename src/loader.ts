@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { depthOf } from "./ast.js";
 import { matchesPath } from "./glob.js";
 import type { ParsedFile, TextFile } from "./types.js";
 
@@ -9,6 +10,12 @@ const TEXT_EXT = new Set([".json", ".yml", ".yaml"]);
 const ALWAYS_SKIP = new Set(["node_modules", ".git", ".foreman", "foreman-report", ".next", ".nuxt", ".turbo", ".cache", "bower_components"]);
 const SKIP_TEXT_FILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "tsconfig.json"]);
 const MAX_FILE_BYTES = 1024 * 1024;
+/**
+ * Hand-written code is a few dozen levels deep. Past this, the file is machine
+ * made or built to exhaust the stack of whatever reads it, so it is not handed
+ * to the rules as a tree. The text checks for secrets still run on it.
+ */
+export const MAX_TREE_DEPTH = 1500;
 
 export const ENV_FILE = /^\.env(\..+)?$/;
 
@@ -21,6 +28,8 @@ export interface LoadedProject {
   files: ParsedFile[];
   textFiles: TextFile[];
   filesWithSyntaxErrors: number;
+  /** Source files the rules could not look at as code: too large, too deeply nested, or unparsable. */
+  filesNotAnalysed: number;
   warnings: string[];
 }
 
@@ -35,7 +44,7 @@ function scriptKind(ext: string): ts.ScriptKind {
  * file that cannot be read or parsed becomes a warning, never a crash.
  */
 export function loadProject(root: string, ignorePaths: string[]): LoadedProject {
-  const out: LoadedProject = { files: [], textFiles: [], filesWithSyntaxErrors: 0, warnings: [] };
+  const out: LoadedProject = { files: [], textFiles: [], filesWithSyntaxErrors: 0, filesNotAnalysed: 0, warnings: [] };
 
   const visit = (dir: string): void => {
     let entries: fs.Dirent[];
@@ -68,7 +77,10 @@ export function loadProject(root: string, ignorePaths: string[]): LoadedProject 
       let text: string;
       try {
         if (fs.statSync(abs).size > MAX_FILE_BYTES) {
-          if (isSource) out.warnings.push(`${rel}: skipped, larger than 1 MB.`);
+          if (isSource) {
+            out.filesNotAnalysed++;
+            out.warnings.push(`${rel}: skipped, larger than 1 MB. Nothing in this file was checked.`);
+          }
           continue;
         }
         text = fs.readFileSync(abs, "utf8");
@@ -84,6 +96,13 @@ export function loadProject(root: string, ignorePaths: string[]): LoadedProject 
       try {
         const ast = ts.createSourceFile(abs, text, ts.ScriptTarget.Latest, true, scriptKind(ext));
         const errors = (ast as unknown as { parseDiagnostics?: unknown[] }).parseDiagnostics?.length ?? 0;
+        const depth = depthOf(ast);
+        if (depth > MAX_TREE_DEPTH) {
+          out.filesNotAnalysed++;
+          out.warnings.push(`${rel}: nested ${depth} levels deep, so the code checks did not run on it. Only the text checks for secrets did. Read this file yourself.`);
+          out.textFiles.push({ path: rel, abs, text });
+          continue;
+        }
         if (errors > 0) {
           out.filesWithSyntaxErrors++;
           out.warnings.push(`${rel}: ${errors} syntax error(s); results for this file may be incomplete.`);
@@ -91,7 +110,9 @@ export function loadProject(root: string, ignorePaths: string[]): LoadedProject 
         out.files.push({ path: rel, abs, text, ast });
       } catch (err) {
         out.filesWithSyntaxErrors++;
-        out.warnings.push(`${rel}: could not be parsed (${(err as Error).message}).`);
+        out.filesNotAnalysed++;
+        out.warnings.push(`${rel}: could not be parsed (${(err as Error).message}), so the code checks did not run on it. Only the text checks for secrets did. Read this file yourself.`);
+        out.textFiles.push({ path: rel, abs, text });
       }
     }
   };

@@ -1,6 +1,7 @@
 import { SEVERITY_LABEL, type Style } from "../report/text.js";
 import type { ExplainResult } from "./explain.js";
 import type { ReviewComment, ReviewResult } from "./review.js";
+import { printable as p } from "./text.js";
 
 export const REVIEW_NOTICE =
   "Machine-generated review from a small local model. It can be wrong and it misses things. " +
@@ -13,14 +14,14 @@ function hedge(confidence: ReviewComment["confidence"]): string {
 export function renderComment(c: ReviewComment, s: Style): string[] {
   const paint = c.severity === "blocker" ? s.red : c.severity === "should-fix" ? s.yellow : s.dim;
   const status = c.withdrawn ? s.dim("  (withdrawn after discussion)") : "";
-  const out = [`  ${s.bold(`#${c.id}`)} ${paint(SEVERITY_LABEL[c.severity].padEnd(12))} ${s.cyan(`${c.file}:${c.line}`)}  ${s.dim(hedge(c.confidence))}${status}`];
-  out.push(`      ${c.body}`);
-  for (const m of c.thread) out.push(s.dim(`      ${m.from === "developer" ? "you" : "reviewer"}: ${m.text}`));
+  const out = [`  ${s.bold(`#${Number(c.id)}`)} ${paint((SEVERITY_LABEL[c.severity] ?? "?").padEnd(12))} ${s.cyan(`${p(c.file)}:${Number(c.line)}`)}  ${s.dim(hedge(c.confidence))}${status}`];
+  out.push(`      ${p(c.body)}`);
+  for (const m of c.thread) out.push(s.dim(`      ${m.from === "developer" ? "you" : "reviewer"}: ${p(m.text)}`));
   return out;
 }
 
 export function renderReview(result: ReviewResult, s: Style): string {
-  const out: string[] = ["", `${s.bold("Foreman Solo review")}  ·  model ${result.model}  ·  against ${result.base}`, ""];
+  const out: string[] = ["", `${s.bold("Foreman Solo review")}  ·  model ${p(result.model)}  ·  against ${p(result.base)}`, ""];
   if (result.changedFiles.length) out.push(`Reviewed ${result.changedFiles.length} changed file(s): ${result.changedFiles.join(", ")}`);
   if (result.skippedFiles.length) out.push(s.dim(`Not sent (not source code, or ignored): ${result.skippedFiles.join(", ")}`));
   out.push("");
@@ -50,17 +51,17 @@ export const EXPLAIN_NOTICE =
   "Check it against the code; the static scan is the part to rely on.";
 
 export function renderExplain(r: ExplainResult, s: Style): string {
-  const out: string[] = ["", `${s.bold("Foreman Solo explain")}  ·  ${r.project} (${r.framework})  ·  model ${r.model}`, ""];
+  const out: string[] = ["", `${s.bold("Foreman Solo explain")}  ·  ${p(r.project)} (${p(r.framework)})  ·  model ${p(r.model)}`, ""];
   if (r.filesRead.length === 0) {
     for (const n of r.notes) out.push(n);
     out.push("");
     return out.join("\n");
   }
-  if (r.overview) out.push(s.bold("What it is"), `  ${r.overview}`, "");
+  if (r.overview) out.push(s.bold("What it is"), `  ${p(r.overview)}`, "");
   if (r.areas.length) {
     out.push(s.bold("Walkthrough"));
     for (const a of r.areas) {
-      out.push(`  ${s.cyan(a.name)}${a.files.length ? s.dim(`  (${a.files.join(", ")})`) : ""}`, `      ${a.what}`);
+      out.push(`  ${s.cyan(p(a.name))}${a.files.length ? s.dim(`  (${a.files.map(p).join(", ")})`) : ""}`, `      ${p(a.what)}`);
     }
     out.push("");
   }
@@ -68,13 +69,13 @@ export function renderExplain(r: ExplainResult, s: Style): string {
     out.push(s.bold("Risky patterns"));
     for (const x of r.risks) {
       const paint = x.severity === "blocker" ? s.red : x.severity === "should-fix" ? s.yellow : s.dim;
-      out.push(`  ${paint(SEVERITY_LABEL[x.severity].padEnd(12))} ${s.cyan(x.file)}`, `      ${x.body}`);
+      out.push(`  ${paint(SEVERITY_LABEL[x.severity].padEnd(12))} ${s.cyan(p(x.file))}`, `      ${p(x.body)}`);
     }
     out.push("");
   }
   if (r.beforeYouStart.length) {
     out.push(s.bold("Before you start"));
-    for (const b of r.beforeYouStart) out.push(`  - ${b}`);
+    for (const b of r.beforeYouStart) out.push(`  - ${p(b)}`);
     out.push("");
   }
   if (r.staticFindings) out.push(s.dim(`The static scan has ${r.staticFindings} open finding(s); run \`foreman-solo scan\` for the full list.`));

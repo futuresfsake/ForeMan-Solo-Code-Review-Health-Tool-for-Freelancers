@@ -21,6 +21,13 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/init.ts` | Starter config, git-ignore entries and the sample workflow |
 | `src/report/client.ts` | Plain-English client summary |
 | `src/report/brand.ts` | Loads the logo and accent colour for the client report |
+| `src/llm/provider.ts` | `LlmProvider` interface and the Ollama provider (local endpoints only) |
+| `src/llm/diff.ts` | Runs `git diff`, parses it, numbers new-file lines |
+| `src/llm/context.ts` | Context builder: files the change imports, files that import it, routes, scan findings |
+| `src/llm/redact.ts` | Masks secrets before anything goes into a prompt |
+| `src/llm/prompt.ts` | The review and reply prompts |
+| `src/llm/review.ts` | Runs a review, validates the model's answer, replies, saves `.foreman/review.json` |
+| `src/llm/render.ts` | Terminal output for a review |
 | `src/report/text.ts`, `html.ts` | Terminal, Markdown, summary table and HTML output |
 
 ## CLI
@@ -40,7 +47,16 @@ foreman-solo scan [path]      default path = .
 foreman-solo init [path]      write foreman.config.json and git-ignore .foreman/ and foreman-report/
   --ci                        also write .github/workflows/foreman-solo.yml (scan on push and weekly)
 
-planned: foreman-solo review (M6), foreman-solo explain (M9)
+foreman-solo review [path]    experimental; asks a local model to review the current git diff
+  --base <ref>                compare against this branch, tag or commit (default HEAD)
+  --model <name>              Ollama model (default: llm.model in the config)
+  --format <text|json>        what to print (default text)
+  --dry-run                   print exactly what would be sent to the model, send nothing
+  --reply <n> --message <t>   answer back to comment n of the last review
+  --config <file>             default: foreman.config.json in the project
+  --no-history                do not save the review to .foreman/review.json
+
+planned: foreman-solo explain (M9)
 ```
 
 With `--all`, a pattern such as `./clients/*` is expanded by the tool itself, so it works the same in every shell. Reports go to `<out>/<project>/report.html` plus `<out>/summary.html`.
@@ -199,11 +215,30 @@ Defaults: blocker 15, should-fix 5, nice-to-have 1; high 1.0, medium 0.6, low 0.
 
 Inline `// foreman-ignore <ruleId>: <reason>` on the finding's line or the line above, or config `ignore: [{ ruleId, file, reason }]`. A reason is mandatory. Suppressed findings stay in the report with their reason and do not affect the score or checklist.
 
-## Post-MVP interfaces (sketch, not implemented)
+## LLM review (M6, experimental)
 
-- `ContextBuilder(diff, model) -> { changedFiles, dependentFiles[], routes[], staticFindings[] }`
-- `ReviewComment { file, line, severity, confidence, body, thread: Message[] }`
-- `LlmProvider.complete(prompt) -> string` (pluggable, user-supplied key)
+Implemented as in ADR-0007. `scan`, the rules and the adapters never import `src/llm/` (a test enforces it).
+
+```ts
+interface LlmProvider { name: string; complete(messages: ChatMessage[], options?: { json?: boolean }): Promise<string> }
+
+interface ReviewComment {
+  id: number; file: string; line: number;
+  severity: Severity;
+  confidence: "medium" | "low";      // never "high": only the deterministic rules can be sure
+  body: string;
+  thread: { from: "developer" | "reviewer"; text: string }[];
+  withdrawn?: boolean;
+}
+```
+
+Flow: `git diff <base>` -> parse and number lines -> run the scan -> mask secrets -> build context (files the change imports, files that import it, routes in the changed files, open scan findings in them, within a character budget) -> prompt with the scan's findings as facts -> validate the answer. A comment is kept only if it names a changed file and a line; the line is moved to the nearest added line; severity falls back to `should-fix`; confidence is capped at `medium`. Comments on a line the scan already reported go to `hidden`. At most 8 comments are kept.
+
+`--reply` sends the original comment, the code around it, the thread so far and the developer's message back to the model, which answers `maintain`, `revise` or `withdraw`. The exchange is stored on the comment. The review is saved to `.foreman/review.json`.
+
+Review JSON: `{ schemaVersion: 1, tool, kind: "review", model, reviewedAt, base, changedFiles, skippedFiles, staticFindings, comments, hidden, droppedInvalid, notes }`.
+
+Not implemented: hosted providers, `explain` (M9).
 
 ## Client report
 

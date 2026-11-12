@@ -136,7 +136,10 @@ describe("review (FR-20..24)", () => {
 
   describe("secrets never reach the prompt", () => {
     const awsKey = FAKE.aws;
-    const pem = ["-----BEGIN " + "PRIVATE KEY-----", "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC", "-----END " + "PRIVATE KEY-----"];
+    // Assembled at runtime, like every fake credential here, so no secret-shaped string is in the repository.
+    const keyBody = ["MIIEvQIBADANBg", "kqhkiG9w0BAQEFAASC"].join("");
+    const dbPass = ["hunter2", "prod", "pass"].join("-");
+    const pem = ["-----BEGIN " + "PRIVATE KEY-----", keyBody, "-----END " + "PRIVATE KEY-----"];
 
     function secretRepo(): string {
       const dir = project({
@@ -153,7 +156,7 @@ describe("review (FR-20..24)", () => {
         [
           "const express = require('express');",
           "const app = express();",
-          'const dbPassword = "hunter2-prod-pass";',
+          `const dbPassword = "${dbPass}";`,
           `const aws = "${awsKey}";`,
           "app.post('/pay', (req, res) => res.end());",
           "",
@@ -167,10 +170,10 @@ describe("review (FR-20..24)", () => {
       const model = fake(answer([]));
       const result = await runReview({ root: dir, base: "HEAD", config: mergeConfig({}), provider: model });
       const prompt = model.prompts[0]!.map((m) => m.content).join("\n");
-      expect(prompt).not.toContain("hunter2-prod-pass");
+      expect(prompt).not.toContain(dbPass);
       expect(prompt).not.toContain(awsKey);
       expect(prompt).not.toContain("hunt"); // the scan's own message shows four characters; it is withheld
-      expect(prompt).not.toContain("MIIEvQIBADANBgkqhkiG9w0BAQEFAASC");
+      expect(prompt).not.toContain(keyBody);
       expect(prompt).toContain("value withheld");
       expect(prompt).toContain('const dbPassword = "[REDACTED]"');
       expect(result.notes.join(" ")).toMatch(/\d+ secret-like value\(s\) were masked/);
@@ -211,7 +214,7 @@ describe("review (FR-20..24)", () => {
       const text = t.stdout.join("\n");
       expect(text).toContain("Nothing was sent");
       expect(text).toContain("[REDACTED]");
-      expect(text).not.toContain("hunter2-prod-pass");
+      expect(text).not.toContain(dbPass);
       expect(fs.existsSync(path.join(dir, ".foreman", "review.json"))).toBe(false);
     });
   });

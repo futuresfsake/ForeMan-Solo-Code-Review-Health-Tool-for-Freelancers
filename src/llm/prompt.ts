@@ -99,6 +99,8 @@ export interface ExplainContext {
   dependencies: string[];
   files: string[];
   moreFiles: number;
+  moreRoutes: number;
+  moreFindings: number;
   routes: { method: string; path: string; file: string; line: number; middleware: string[] }[];
   findings: { ruleId: string; file: string; line: number; severity: string; message: string }[];
   samples: { path: string; text: string; truncated: boolean }[];
@@ -117,10 +119,10 @@ Dependencies: ${ctx.dependencies.join(", ") || "none"}
 Source files${ctx.moreFiles ? ` (first ${ctx.files.length}, ${ctx.moreFiles} more not listed)` : ""}:
 ${ctx.files.map((f) => `- ${f}`).join("\n")}
 
-Routes found by the scanner:
+Routes found by the scanner${ctx.moreRoutes ? ` (first ${ctx.routes.length}, ${ctx.moreRoutes} more not listed)` : ""}:
 ${list(ctx.routes, (r) => `- ${r.method} ${r.path} (${r.file}:${r.line}) middleware: ${r.middleware.join(", ") || "none"}`, "- none found")}
 
-Facts from a deterministic scanner. They are true; build on them, do not contradict them:
+Facts from a deterministic scanner${ctx.moreFindings ? ` (the ${ctx.findings.length} most serious, ${ctx.moreFindings} more not listed)` : ""}. They are true; build on them, do not contradict them:
 ${list(ctx.findings, (f) => `- ${f.ruleId} at ${f.file}:${f.line} (${f.severity}): ${f.message}`, "- none")}
 
 Start of the most connected files:

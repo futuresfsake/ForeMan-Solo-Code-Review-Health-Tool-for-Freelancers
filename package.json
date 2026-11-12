@@ -16,10 +16,14 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run lint && npm test && npm run build"
+    "check:pack": "node scripts/check-pack.mjs",
+    "check": "npm run lint && npm test && npm run build && node dist/bin.js scan . --no-audit --no-history && npm run check:pack && npm audit --omit=dev --audit-level=high",
+    "hooks": "git config core.hooksPath .githooks",
+    "prepublishOnly": "npm run check"
   },
   "keywords": [
     "security",

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { detectFramework } from "../adapters/index.js";
 import type { Config } from "../config.js";
+import { writeInside } from "../fsafe.js";
 import { isSourceFileName, loadProject, readPackageJson } from "../loader.js";
 import { scanProject } from "../scan.js";
 import type { Confidence, Severity } from "../types.js";
@@ -10,7 +11,7 @@ import { createRedactor } from "./redact.js";
 import { getDiff, parseDiff, ReviewError, renderNumbered, type DiffFile } from "./diff.js";
 import { renderChangedFiles, replyMessages, reviewMessages } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
-import { printable } from "./text.js";
+import { printable } from "../text.js";
 
 export { ReviewError } from "./diff.js";
 
@@ -73,6 +74,16 @@ const MAX_BODY = 600;
 const MAX_DIFF_CHARS = 14_000;
 const MAX_RELATED_CHARS = 9_000;
 const MAX_RELATED_FILE_CHARS = 3_000;
+/**
+ * The whole prompt, whatever it is made of. A prompt larger than the model's
+ * context is cut silently by Ollama, and what it drops could be the scan's
+ * facts or the question itself, so the prompt is cut here, visibly, instead.
+ */
+const MAX_PROMPT_CHARS = 26_000;
+const MAX_FACTS = 30;
+const MAX_PROMPT_ROUTES = 40;
+const MAX_FACT_CHARS = 200;
+const MAX_REVIEW_BYTES = 1024 * 1024;
 
 export const REVIEW_FILE = path.join(".foreman", "review.json");
 
@@ -223,13 +234,55 @@ export async function runReview(options: ReviewOptions): Promise<ReviewResult> {
   if (context.omitted.length) result.notes.push(`Related files left out to fit the model: ${context.omitted.join(", ")}.`);
   if (mask.count > 0) result.notes.push(`${mask.count} secret-like value(s) were masked before anything was sent to the model.`);
 
-  const messages = reviewMessages(context, renderChangedFiles(context));
+  // What goes to the model is a capped copy; `context` keeps the full lists for the checks below.
+  const facts = [...context.staticFindings].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+  const sent = {
+    ...context,
+    changed: [...context.changed],
+    related: [...context.related],
+    routes: context.routes.slice(0, MAX_PROMPT_ROUTES),
+    staticFindings: facts.slice(0, MAX_FACTS).map((f) => (f.message.length > MAX_FACT_CHARS ? { ...f, message: `${f.message.slice(0, MAX_FACT_CHARS - 1)}…` } : f)),
+  };
+  if (facts.length > MAX_FACTS) result.notes.push(`Only the ${MAX_FACTS} most serious of ${facts.length} scan findings in the changed files were sent to the model.`);
+  if (context.routes.length > MAX_PROMPT_ROUTES) result.notes.push(`Only the first ${MAX_PROMPT_ROUTES} of ${context.routes.length} routes in the changed files were sent to the model.`);
+
+  const build = () => reviewMessages(sent, renderChangedFiles(sent));
+  const size = (m: { content: string }[]): number => m.reduce((n, x) => n + x.content.length, 0);
+  let messages = build();
+  const droppedRelated: string[] = [];
+  while (size(messages) > MAX_PROMPT_CHARS && sent.related.length > 0) {
+    droppedRelated.push(sent.related.pop()!.path);
+    messages = build();
+  }
+  if (droppedRelated.length) result.notes.push(`Related files left out to keep the prompt inside the model's context: ${droppedRelated.join(", ")}.`);
+  if (size(messages) > MAX_PROMPT_CHARS) {
+    // Still too large: shorten the changed code itself, last file first, and say so.
+    let over = size(messages) - MAX_PROMPT_CHARS;
+    const cut: string[] = [];
+    for (let i = sent.changed.length - 1; i >= 0 && over > 0; i--) {
+      const file = sent.changed[i]!;
+      const rows = [...file.rows];
+      while (rows.length > 1 && over > 0) over -= renderNumbered({ ...file, rows: [rows.pop()!] }).length + 1;
+      const kept = new Set(rows.filter((r) => r.kind === "+").map((r) => r.line));
+      sent.changed[i] = { ...file, rows, added: file.added.filter((l) => kept.has(l)) };
+      cut.push(file.path);
+    }
+    sent.changed = sent.changed.filter((c) => c.added.length > 0);
+    messages = build();
+    result.notes.push(`The end of the change in ${cut.reverse().join(", ")} was left out to keep the prompt inside the model's context. Review a smaller change for full coverage.`);
+  }
+  result.changedFiles = sent.changed.map((d) => d.path);
+  if (sent.changed.length === 0 || size(messages) > MAX_PROMPT_CHARS) {
+    throw new ReviewError("This change is too large to fit the model even after cutting. Review a smaller change, or pass --base closer to HEAD.");
+  }
+
   if (options.dryRun) {
     result.promptPreview = messages.map((m) => `[${m.role}]\n${m.content}`).join("\n\n");
     return result;
   }
   const answer = await provider.complete(messages, { json: true });
-  const { comments, dropped } = normalizeComments(extractJson(answer), included);
+  // Comments are tied to the lines the model was actually shown.
+  const { comments, dropped } = normalizeComments(extractJson(answer), sent.changed);
   result.droppedInvalid = dropped;
 
   const reported = new Set(context.staticFindings.map((f) => `${f.file}:${f.line}`));
@@ -242,14 +295,14 @@ export async function runReview(options: ReviewOptions): Promise<ReviewResult> {
 }
 
 export function saveReview(root: string, result: ReviewResult): void {
-  const file = path.join(path.resolve(root), REVIEW_FILE);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
+  // Refuses to write through a link, so a project cannot aim this at another file.
+  writeInside(path.resolve(root), REVIEW_FILE, `${JSON.stringify(result, null, 2)}\n`);
 }
 
 export function loadReview(root: string): ReviewResult {
   const file = path.join(path.resolve(root), REVIEW_FILE);
   try {
+    if (fs.statSync(file).size > MAX_REVIEW_BYTES) throw new Error("too large");
     const data = JSON.parse(fs.readFileSync(file, "utf8")) as ReviewResult;
     if (data?.kind !== "review" || !Array.isArray(data.comments)) throw new Error("bad shape");
     return data;
@@ -295,8 +348,20 @@ export async function replyToComment(root: string, provider: LlmProvider, id: nu
   if (!comment) throw new ReviewError(`There is no comment ${id} in the last review.`);
   if (message.trim() === "") throw new ReviewError("Write what you want to say with --message.");
 
+  // The saved review is a file in the project, so nothing in it is taken on
+  // trust: every field is cleaned and cut to length before it goes in a prompt.
+  if (!Array.isArray(comment.thread)) comment.thread = [];
   const answer = await provider.complete(
-    replyMessages({ ...comment, snippet: snippetFor(root, comment), message: message.trim() }),
+    replyMessages({
+      file: printable(comment.file).slice(0, 300),
+      line: Number(comment.line) || 0,
+      severity: severityOf(comment.severity),
+      confidence: cap(comment.confidence),
+      body: printable(comment.body).slice(0, MAX_BODY),
+      thread: comment.thread.slice(-6).map((m) => ({ from: m?.from === "developer" ? ("developer" as const) : ("reviewer" as const), text: printable(m?.text).slice(0, MAX_BODY) })),
+      snippet: snippetFor(root, comment),
+      message: message.trim().slice(0, 2000),
+    }),
     { json: true },
   );
   const parsed = extractJson(answer) as { stance?: unknown; reply?: unknown; severity?: unknown; confidence?: unknown };

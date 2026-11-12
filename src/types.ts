@@ -142,9 +142,13 @@ export interface ScanResult {
   coverage: {
     filesScanned: number;
     filesWithSyntaxErrors: number;
+    /** Source files the rules could not look at as code: too large, too deeply nested, or unparsable. */
+    filesNotAnalysed: number;
     routesFound: number;
     rulesRun: string[];
     rulesSkipped: { id: string; reason: string }[];
+    /** Config keys that differ from the defaults and change what is scanned or how it is scored. */
+    configChanges: string[];
   };
   warnings: string[];
 }

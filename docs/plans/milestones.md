@@ -17,6 +17,8 @@ Exit criteria must be runnable or checkable.
 | M9 | Built, experimental | `foreman-solo explain` on the same local model: framework, routes and scan findings go in as facts with a sample of the most connected files (secrets masked), and the answer is an overview, a walkthrough, risky patterns and a before-you-start list; verified by `tests/explain.test.ts` with a fake model. Not yet tried on a real model or an unfamiliar real repo |
 | M10 | Done for NestJS, on fixtures | NestJS adapter; auth and rate-limit rules run on it unchanged; verified by `tests/nestjs.test.ts`. Not yet run on a real Nest project; Fastify and Next.js not started |
 
+Security review, 2026-11-12: the tool itself was reviewed against a hostile scanned project. Nine weaknesses in the code were fixed with a regression test each (`tests/security.test.ts`), including the hard prompt limit that `review` lacked. Four repository settings remain for the owner, the first being to register the npm name before anything else is released ([security-audit.md](../security/security-audit.md)).
+
 ## Scope and exit criteria
 
 | ID | Scope | Exit criteria |

@@ -1,4 +1,5 @@
 import type { Config } from "./config.js";
+import { CATALOG } from "./rules/catalog.js";
 import type { ChecklistItem, Finding } from "./types.js";
 
 /** At most this many findings per rule count toward the score. */
@@ -47,7 +48,17 @@ export function checklistItemsFor(ruleId: string): string[] {
   return CHECKLIST.filter((c) => c.rules.some((r) => ruleId.startsWith(r))).map((c) => c.id);
 }
 
-export function evaluateChecklist(findings: Finding[], config: Config, ranRules: Set<string>, hasRoutes: boolean): ChecklistItem[] {
+/** Every rule ID that feeds a checklist item. */
+function rulesFor(def: ChecklistDef): string[] {
+  return Object.keys(CATALOG).filter((id) => def.rules.some((r) => id.startsWith(r)));
+}
+
+/**
+ * An item passes only when every rule behind it ran, on every file, and found
+ * nothing. If a rule was turned off or failed, or a source file could not be
+ * analysed, the honest answer is "unverified", not "pass".
+ */
+export function evaluateChecklist(findings: Finding[], config: Config, ranRules: Set<string>, hasRoutes: boolean, filesNotAnalysed = 0): ChecklistItem[] {
   return CHECKLIST.map((def) => {
     const attested = config.checklist.attest[def.id];
     const failing = findings.filter((f) => !f.suppressed && f.checklistItems.includes(def.id));
@@ -57,7 +68,13 @@ export function evaluateChecklist(findings: Finding[], config: Config, ranRules:
     let reason: string | undefined;
     if (def.rules.length === 0) reason = "cannot be checked from code";
     else if (def.needsRoutes && !hasRoutes) reason = "no routes were found to check";
-    else if (!def.rules.some((r) => [...ranRules].some((id) => id.startsWith(r)))) reason = "the rule for this item did not run";
+    else {
+      const needed = rulesFor(def);
+      const missing = needed.filter((id) => !ranRules.has(id));
+      if (missing.length === needed.length) reason = "the rule for this item did not run";
+      else if (missing.length > 0) reason = `${missing.length} of the ${needed.length} rules for this item did not run (${missing.join(", ")})`;
+      else if (filesNotAnalysed > 0) reason = `${filesNotAnalysed} source file(s) could not be analysed (see the warnings)`;
+    }
     if (reason) {
       return attested
         ? { id: def.id, title: def.title, status: "pass", note: `attested: ${attested}` }

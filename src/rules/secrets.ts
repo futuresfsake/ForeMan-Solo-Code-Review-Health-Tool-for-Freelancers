@@ -18,6 +18,11 @@ export const KEY_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "Private key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/ },
 ];
 
+/** The password in "scheme://user:password@host". */
+const URL_PASSWORD = /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"`]+:([^\s@/'"`]+)@/i;
+/** A JSON Web Token: three base64url parts, the first two starting with an encoded "{". */
+const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/;
+
 const PLACEHOLDER = /your|example|placeholder|changeme|xxxx|<.*>|\*\*\*|todo|dummy|sample|replace|insert|\$\{/i;
 const EXAMPLE_ENV = /\.(example|sample|template|dist|defaults?)$/i;
 
@@ -60,7 +65,15 @@ export const secretsRule: Rule = {
           if (!m) continue;
           const shown = label === "Private key" ? "private key block" : redact(m[0]);
           findings.push({ ruleId: "secrets/hardcoded-api-key", file: file.path, line: i + 1, message: `${label} in source: ${shown}.` });
-          break;
+          return;
+        }
+        if (JWT.test(line)) {
+          findings.push({ ruleId: "secrets/hardcoded-api-key", file: file.path, line: i + 1, message: "JSON Web Token in source: [masked]." });
+          return;
+        }
+        const u = URL_PASSWORD.exec(line);
+        if (u && !/^(\$\{|<|%7B|\{)/.test(u[1]) && !PLACEHOLDER.test(u[1]) && u[1].length >= 4 && !DEFAULT_CREDENTIALS.has(u[1].toLowerCase())) {
+          findings.push({ ruleId: "secrets/hardcoded-password", file: file.path, line: i + 1, message: "A connection string contains a hardcoded password: [masked]." });
         }
       });
     }

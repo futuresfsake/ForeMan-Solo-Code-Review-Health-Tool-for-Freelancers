@@ -21,6 +21,10 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Experimental `foreman-solo review`: a local model (Ollama, `localhost` only) reviews the current git diff with the scan's findings as facts. Comments carry a severity and a confidence (never "high"), secrets are masked before sending, `--dry-run` shows what would be sent, and `--reply` lets you push back on a comment. Config: `llm.model`, `llm.endpoint`.
 - Experimental `foreman-solo explain`: the same local model gives a plain-language walkthrough of an unfamiliar project: what it is, its main areas, risky patterns and what to check before starting. The framework, routes and scan findings are given as facts with a sample of the most connected files; secrets are masked, `--dry-run` shows what would be sent, and nothing is written into the project. Anything that does not point at a real file is dropped.
 - CI workflow for this repository (lint, test, build, smoke scan on three operating systems).
+- `--no-project-config` on `scan`, `review` and `explain`: ignore the project's own `foreman.config.json` and use the defaults. For the first scan of code you do not trust yet.
+- Every report names the config keys that changed the scan (`coverage.configChanges` in JSON) and counts source files that could not be analysed (`coverage.filesNotAnalysed`).
+- `npm run check` (types, tests, build, self-scan, package contents, dependency audit), git hooks in `.githooks/` (`npm run hooks`), a CodeQL workflow and a Dependabot config.
+- A security review of the tool itself, with every finding, fix and open item: docs/security/security-audit.md. The safeguards that keep the fixes in place: docs/security/safeguards.md.
 
 ### Security
 - Git settings that come with a project can no longer run a program. `scan` and `review` call git with the file-system monitor and hooks switched off; `git diff` also runs without external diff or text-conversion programs, without entering submodules, and with every configured content filter disabled. Before this, a project handed over with its `.git` folder could run a program on the machine during `scan` (when a `.env` file exists) or `review`.
@@ -31,5 +35,21 @@ Format: [Keep a Changelog](https://keepachangelog.com). Versioning: [SemVer](htt
 - Text from the model, and from a saved review, is stripped of control and text-direction characters before it is saved or printed.
 - `explain` caps the routes, findings and names it sends and keeps the whole prompt under about 20,000 characters, so the model's context is not overrun and the scan's facts are not silently dropped.
 
+From the security review of 2026-11-12 (docs/security/security-audit.md). The project being scanned is treated as hostile input throughout:
+
+- **A program placed in the scanned project can no longer be run by a scan (Windows).** `git` and `npm` were started by name, and Windows looks in the current folder first, so a project that shipped its own `npm.cmd` or `git.exe` had it run. Both are now found on `PATH` by the tool and started by absolute path, never from inside the project, and child processes are told not to search the current folder.
+- **One hostile file can no longer switch checks off for the whole project.** A file with a 10,000-term expression made the secrets, injection and config rules fail for every file, with score 100 and exit code 0. The tree walk no longer recurses; a file nested more than 1,500 levels, or unparsable, gets the text checks for secrets only and is named in a warning; a rule that fails anyway marks the result incomplete.
+- **Nothing is written through a link.** `.foreman/history.json`, `.foreman/review.json`, report files and the files `init` creates were written through links that came with a project, which could overwrite a file elsewhere on the machine. Such a write is now refused.
+- **Text from the project cannot drive the terminal or a report.** Project names, file names, route paths, suppression reasons and history entries are cleaned of control and text-direction characters when the result is built. Markdown reports escape HTML and link syntax. HTML reports carry a content security policy that allows no script and no network request.
+- **A project's own config cannot reach outside the project.** `report.outDir` in a config must be a relative folder below the working folder (use `--out` for anywhere else), and `report.logo` must be a file inside the project unless the config was passed with `--config`.
+- The scan warns when the project's `.npmrc` changes which registry the dependency check asks.
+- Crafted long lines and glob patterns can no longer stall the scan: the connection-string and token checks are bounded, and `ignorePaths` globs are matched without a regular expression.
+- `review` keeps its whole prompt under about 26,000 characters and says what it cut. Lines over 2,000 characters are left out of any prompt. Fields read from a saved review are cleaned and cut to length before `--reply` uses them.
+- The workflow written by `init --ci` pins its actions to commits and the tool to one exact version, keeps no git credentials, and warns at the top that the npm package is not published yet.
+- This repository's CI pins its actions to commits, installs with scripts disabled, verifies registry signatures and checks what the package would contain.
+
 ### Changed
+- A go-live checklist item now passes only when every rule behind it ran on every source file. With a rule turned off or failed, or a file that could not be analysed, the item is `unverified` and the note says why. Before, GL-01 showed as passed with all three `secrets/*` rules off.
+- Exit code 3 is also returned when a rule failed while scanning and there are no blockers, so an incomplete scan cannot pass a CI job. The result is still printed.
+- An absolute path or `..` in `report.outDir` is now a config error (exit 2).
 - After validating on three open-source Express apps (docs/testing/validation-results.md): test and fixture folders are ignored by default; enum-like values are no longer reported as secrets; hyphenated auth paths count as public; `auth.optional` no longer counts as authentication; an open `POST /users` and path-parameter-only validation findings are low confidence; commented-out code is not HTTPS evidence; option-less `cors()` is reported once per file.

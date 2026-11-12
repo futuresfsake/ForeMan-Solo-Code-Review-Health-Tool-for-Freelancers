@@ -22,7 +22,8 @@ Placed in the root of the scanned project (or passed with `--config`). Unknown k
   "rules": { "config/permissive-cors": "off", "deps/no-lockfile": "should-fix" },
   "ignore": [{ "ruleId": "secrets/hardcoded-password", "file": "seed/**", "reason": "demo seed data" }],
   "checklist": { "attest": { "GL-04": "Daily database backup by the host, verified 2026-11-01" } },
-  "report": { "outDir": "./foreman-report", "projectName": "Acme Shop API", "preparedBy": "Sam Rivera", "clientName": "Acme Ltd", "logo": "brand/logo.png", "accentColor": "#2f5bd8" }
+  "report": { "outDir": "./foreman-report", "projectName": "Acme Shop API", "preparedBy": "Sam Rivera", "clientName": "Acme Ltd", "logo": "brand/logo.png", "accentColor": "#2f5bd8" },
+  "llm": { "model": "qwen2.5-coder:7b", "endpoint": "http://localhost:11434" }
 }
 ```
 
@@ -43,6 +44,9 @@ Placed in the root of the scanned project (or passed with `--config`). Unknown k
 | `report.projectName` | package name or folder name | Name shown in reports |
 | `report.preparedBy`, `report.clientName` | empty | Shown on the client report (`--report client`) |
 | `report.logo` | empty | Path to your logo, relative to the project: png, jpg, gif, webp or svg, up to 256 KB. Embedded in the client report, so the report stays one file with no external requests. A missing or oversized file is a usage error (exit 2) |
+| `llm.provider` | `ollama` | Only `ollama` exists. Used by `foreman-solo review`; the scan ignores `llm` |
+| `llm.model` | `qwen2.5-coder:7b` | The Ollama model to use. Install it first with `ollama pull <model>`. `--model` overrides it |
+| `llm.endpoint` | `http://localhost:11434` | Where Ollama listens. Must be `localhost`, `127.0.0.1` or `[::1]`: anything else is rejected, so code is never sent to another machine |
 | `report.accentColor` | empty | A `#rrggbb` colour used for the client report's top border and section markers |
 
 ## Inline suppression

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { SAFE_DIFF_FLAGS, UnsafeGitConfigError, filterOverrides, safeGitArgs } from "../git.js";
+import { SAFE_DIFF_FLAGS, UnsafeGitConfigError, filterOverrides, gitProgram, gitSpawnOptions, safeGitArgs } from "../git.js";
 
 export class ReviewError extends Error {}
 
@@ -81,12 +81,15 @@ export function parseDiff(text: string): DiffFile[] {
  */
 export function getDiff(root: string, base: string): string {
   if (base.startsWith("-")) throw new ReviewError(`Not a valid git reference: ${base}`);
+  // By absolute path, and never a "git" that sits in the project itself (see src/exec.ts).
+  const git = gitProgram(root);
+  if (!git) throw new ReviewError("git was not found on this machine.");
   try {
     // Nothing named in the repository's own git settings may run (see src/git.ts).
     return execFileSync(
-      "git",
+      git,
       safeGitArgs(root, [...filterOverrides(root), "-c", "core.quotePath=false", "diff", "--no-color", ...SAFE_DIFF_FLAGS, "--relative", "--unified=3", base, "--"]),
-      { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
+      { ...gitSpawnOptions(), encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (err) {
     if (err instanceof UnsafeGitConfigError) throw new ReviewError(err.message);

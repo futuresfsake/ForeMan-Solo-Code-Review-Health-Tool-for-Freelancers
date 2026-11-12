@@ -35,7 +35,12 @@ describe("init", () => {
     expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf8")).toBe("node_modules\n.foreman/\nforeman-report/\n");
     const workflow = fs.readFileSync(path.join(dir, ".github", "workflows", "foreman-solo.yml"), "utf8");
     expect(workflow).toContain("schedule:");
-    expect(workflow).toContain("foreman-solo scan");
+    // One exact version of the tool, actions pinned to a commit, and no git credentials left behind.
+    expect(workflow).toMatch(/npx --yes foreman-solo@\d+\.\d+\.\d+ scan/);
+    expect(workflow.match(/uses: \S+@[0-9a-f]{40} # v\d/g)).toHaveLength(3);
+    expect(workflow).not.toMatch(/uses: \S+@v\d/);
+    expect(workflow).toContain("persist-credentials: false");
+    expect(workflow).toContain("contents: read");
     // The initialised project still scans cleanly.
     expect(scanProject(dir, { config: mergeConfig(config), now: NOW }).score).toBe(100);
   });

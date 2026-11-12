@@ -4,12 +4,13 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 
 ## Today (alpha, 0.1.0)
 
-- Not published to npm. Run it from a clone (see the README).
+- Not published to npm. Run it from a clone (see the README). The name `foreman-solo` is not registered yet, so until this project publishes it, `npx foreman-solo` would fetch whatever someone else put there. Do not run it.
 - Validated only on three open-source Express apps, not yet on a production codebase of the author's own (see testing/validation-results.md). Expect false positives and misses on code styles not seen yet.
 - `foreman-solo review` is experimental and `explain` is experimental too. `scan` never uses an LLM; only `review` and `explain` do, and only a model running on your own machine.
-- The workflow written by `init --ci` calls the npm package, which is not published yet.
+- The workflow written by `init --ci` calls the npm package, which is not published yet. The file says so at the top; do not enable it before the package exists.
 - The client report supports a logo and one accent colour but no other theming, and there is no PDF export (print the HTML page to PDF from a browser).
-- CI for this repository is defined but has not been observed running on macOS or Linux yet.
+- CI runs on Windows, macOS and Linux with Node 20, 22 and 24. Node 20 is past its end of life; whether to keep it as the minimum is undecided.
+- Four repository settings found in the security review are still to be changed by the owner: registering the npm name, private vulnerability reporting, a ruleset on `main`, and Dependabot alerts ([security/security-audit.md](../security/security-audit.md#open-actions-for-the-repository-owner)).
 
 ## By design (MVP)
 
@@ -33,13 +34,26 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 - Dependency results need network access; offline runs skip them and say so.
 - Not a penetration test, compliance audit or certification (see security-and-trust.md and legal.md).
 
+## Scanning code you did not write
+
+The project being scanned is treated as untrusted ([security-and-trust.md](../security-and-trust.md)). What that does not cover:
+
+- A project can still keep code away from the rules, as long as you do not read the output. A file over 1 MB is skipped; a file nested more than 1,500 levels deep, or one that cannot be parsed, gets only the text checks for secrets; a folder named in `ignorePaths` is not read; an inline `foreman-ignore` comment suppresses a finding. Each of these is reported (a warning, the config notice, the suppressed count, an `unverified` checklist item), but nothing stops the scan.
+- The project's `foreman.config.json` is obeyed unless you pass `--no-project-config`. The output names the keys it changed; it does not judge whether the change is reasonable.
+- `npm audit` obeys the project's `.npmrc`, so the dependency result is only as good as the registry that file names. The scan warns; it cannot prevent it.
+- There is no overall time limit on a scan. The patterns that run over whole lines were tested with hostile input, which is not a proof for every pattern, and the parser's own speed on hostile input is bounded only by the 1 MB file limit.
+- The check that a path is not a link and the write that follows are two steps. This guards against a folder prepared in advance, not against a program changing the folder while the scan runs.
+- `git` and `npm` are trusted. The tool controls how they are found and which project settings they obey, not defects in the programs themselves.
+- The tool has had a self-review by its author ([security/security-audit.md](../security/security-audit.md)), not an independent audit, fuzzing, or a review of its two runtime dependencies.
+
 ## The LLM review (`foreman-solo review`, experimental)
 
 - It reviews the git diff of the working tree against a base (`HEAD` by default). New files that git does not track yet are not in a diff, so stage or commit them first.
 - Only parsed source files are sent. `.env`, JSON, YAML and ignored paths are never part of the prompt.
 - Secrets are masked before sending: well-known key formats, private key blocks, passwords inside connection strings (`scheme://user:password@host`), JSON Web Tokens, literal `Bearer` tokens, and string values on lines the scan flagged. A secret in any other shape that the scan does not recognise is not masked. Use `--dry-run` to see exactly what would be sent.
 - The scan reports a password inside a connection string (a non-default one; defaults go to `config/default-credentials`) and a literal JSON Web Token as findings. It still cannot recognise a secret in any other shape.
-- The prompt has no hard size limit: a changed file with a very large number of routes or findings can push it past the model's context, and Ollama then cuts it silently. `explain` has such a limit; `review` does not yet.
+- The whole prompt is kept under about 26,000 characters. For a larger change, the scan findings and routes sent are capped (30 and 40), then related files are dropped, then the end of the changed code is cut. The output says what was left out, and comments are only accepted on lines the model was shown.
+- Lines longer than 2,000 characters (minified or generated code) are not sent at all; the prompt shows a placeholder with the line's length.
 - Comments on a line the scan already reported are not shown, as likely repeats. They are kept in the JSON output (`hidden`), so this guess can be checked.
 - Comments are never "high" confidence, and a comment that cannot be tied to a changed line is dropped.
 - Context is limited to what fits a small model: about 14,000 characters of diff and 9,000 of related files. Large changes are cut, and the output says so.

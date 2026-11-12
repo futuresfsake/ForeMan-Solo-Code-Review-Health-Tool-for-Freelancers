@@ -12,6 +12,11 @@ const MAX_FILE_BYTES = 1024 * 1024;
 
 export const ENV_FILE = /^\.env(\..+)?$/;
 
+/** True for a file name the loader treats as source code. */
+export function isSourceFileName(name: string): boolean {
+  return SOURCE_EXT.has(path.extname(name).toLowerCase()) && !name.endsWith(".d.ts");
+}
+
 export interface LoadedProject {
   files: ParsedFile[];
   textFiles: TextFile[];
@@ -54,7 +59,7 @@ export function loadProject(root: string, ignorePaths: string[]): LoadedProject 
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
       const isEnv = ENV_FILE.test(entry.name);
-      const isSource = SOURCE_EXT.has(ext) && !entry.name.endsWith(".d.ts");
+      const isSource = isSourceFileName(entry.name);
       const isText = isEnv || (TEXT_EXT.has(ext) && !SKIP_TEXT_FILES.has(entry.name));
       if (!isSource && !isText) continue;
       // Env files are always looked at: ignoring them would hide the check.

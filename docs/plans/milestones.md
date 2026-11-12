@@ -11,10 +11,10 @@ Exit criteria must be runnable or checkable.
 | M3 | Done | All MVP rules, audit wrapper, score, checklist, suppressions, exit codes; verified by `tests/rules.test.ts`, `tests/scan.test.ts` |
 | M4 | Met on substitute projects | All outputs are done. Validated on three open-source Express apps with every finding checked by hand ([validation-results.md](../testing/validation-results.md)). Still to do: repeat on the author's own project when one exists |
 | M5 | Done | `scan --all`, history and trend, `foreman-solo init`, and `init --ci` for a GitHub Actions workflow; verified by `tests/cli.test.ts`, `tests/init-client.test.ts` |
-| M6 | Not started | LLM review. Needs a provider choice and an API key; nothing in the tool calls an LLM today |
+| M6 | Built, experimental | `foreman-solo review` on local Ollama (ADR-0007): context builder, tagged comments with confidence, secret masking, `--dry-run`, and reply round-trip; verified by `tests/review.test.ts` with a fake model. Tried once on a real `qwen2.5-coder:7b`: it works end to end but the small model mostly restates scanner findings and generic advice, and missed a seeded business-logic bug. A hosted provider is not built |
 | M7 | Done | Plain-English risk text for every rule, and `--report client` with "prepared by", client name, logo and accent colour; verified by `tests/init-client.test.ts` |
 | M8 | Done as a sample | `init --ci` writes a workflow that scans on push and weekly and fails on blockers or a low score. It relies on the npm package, which is not published yet |
-| M9 | Not started | `explain` needs the LLM layer |
+| M9 | Not started | `explain` can now reuse the M6 context builder and provider |
 | M10 | Done for NestJS, on fixtures | NestJS adapter; auth and rate-limit rules run on it unchanged; verified by `tests/nestjs.test.ts`. Not yet run on a real Nest project; Fastify and Next.js not started |
 
 ## Scope and exit criteria

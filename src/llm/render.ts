@@ -1,7 +1,7 @@
 import { SEVERITY_LABEL, type Style } from "../report/text.js";
 import type { ExplainResult } from "./explain.js";
 import type { ReviewComment, ReviewResult } from "./review.js";
-import { printable as p } from "./text.js";
+import { printable as p } from "../text.js";
 
 export const REVIEW_NOTICE =
   "Machine-generated review from a small local model. It can be wrong and it misses things. " +
@@ -22,12 +22,12 @@ export function renderComment(c: ReviewComment, s: Style): string[] {
 
 export function renderReview(result: ReviewResult, s: Style): string {
   const out: string[] = ["", `${s.bold("Foreman Solo review")}  ·  model ${p(result.model)}  ·  against ${p(result.base)}`, ""];
-  if (result.changedFiles.length) out.push(`Reviewed ${result.changedFiles.length} changed file(s): ${result.changedFiles.join(", ")}`);
-  if (result.skippedFiles.length) out.push(s.dim(`Not sent (not source code, or ignored): ${result.skippedFiles.join(", ")}`));
+  if (result.changedFiles.length) out.push(`Reviewed ${result.changedFiles.length} changed file(s): ${result.changedFiles.map(p).join(", ")}`);
+  if (result.skippedFiles.length) out.push(s.dim(`Not sent (not source code, or ignored): ${result.skippedFiles.map(p).join(", ")}`));
   out.push("");
 
   if (result.changedFiles.length === 0) {
-    for (const n of result.notes) out.push(n);
+    for (const n of result.notes) out.push(p(n));
     out.push("");
     return out.join("\n");
   }
@@ -41,7 +41,7 @@ export function renderReview(result: ReviewResult, s: Style): string {
   }
   if (result.hidden.length) out.push(s.dim(`${result.hidden.length} comment(s) were on lines the scan already reported and are not shown (see them with --format json).`));
   if (result.droppedInvalid) out.push(s.dim(`${result.droppedInvalid} comment(s) could not be tied to a changed line and were dropped.`));
-  for (const n of result.notes) out.push(s.dim(n));
+  for (const n of result.notes) out.push(s.dim(p(n)));
   out.push("", s.dim(REVIEW_NOTICE), "");
   return out.join("\n");
 }
@@ -53,7 +53,7 @@ export const EXPLAIN_NOTICE =
 export function renderExplain(r: ExplainResult, s: Style): string {
   const out: string[] = ["", `${s.bold("Foreman Solo explain")}  ·  ${p(r.project)} (${p(r.framework)})  ·  model ${p(r.model)}`, ""];
   if (r.filesRead.length === 0) {
-    for (const n of r.notes) out.push(n);
+    for (const n of r.notes) out.push(p(n));
     out.push("");
     return out.join("\n");
   }
@@ -79,7 +79,7 @@ export function renderExplain(r: ExplainResult, s: Style): string {
     out.push("");
   }
   if (r.staticFindings) out.push(s.dim(`The static scan has ${r.staticFindings} open finding(s); run \`foreman-solo scan\` for the full list.`));
-  for (const n of r.notes) out.push(s.dim(n));
+  for (const n of r.notes) out.push(s.dim(p(n)));
   out.push("", s.dim(EXPLAIN_NOTICE), "");
   return out.join("\n");
 }

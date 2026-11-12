@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
-import { ConfigError, loadConfig, type Config } from "./config.js";
-import { globToRegExp } from "./glob.js";
+import { ConfigError, DEFAULT_CONFIG, loadConfig, type Config } from "./config.js";
+import { UnsafePathError, writeReportFile } from "./fsafe.js";
+import { globMatch } from "./glob.js";
 import { applyHistory } from "./history.js";
 import { initProject } from "./init.js";
 import { LlmError, createOllamaProvider, type LlmProvider } from "./llm/provider.js";
@@ -14,7 +15,8 @@ import { renderClientHtml } from "./report/client.js";
 import { renderHtml, renderSummaryHtml } from "./report/html.js";
 import { COLOR, PLAIN, open, renderMarkdown, renderSummaryTable, renderTerminal, type SummaryRow } from "./report/text.js";
 import { runNpmAudit } from "./rules/deps.js";
-import { scanProject, toolVersion } from "./scan.js";
+import { ruleFailed, scanProject, toolVersion } from "./scan.js";
+import { printable } from "./text.js";
 import type { AuditRunner, ScanResult } from "./types.js";
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, internal: 3 } as const;
@@ -49,8 +51,20 @@ interface ScanFlags {
   context?: string;
   failUnder?: number;
   config?: string;
+  projectConfig: boolean;
   audit: boolean;
   history: boolean;
+}
+
+/**
+ * Which config applies. `--config` names a file you chose. Without it the
+ * project's own `foreman.config.json` is used, unless `--no-project-config`
+ * says to ignore it: the way to scan a project you do not trust yet, since
+ * its config can turn rules off and hide folders.
+ */
+function configFor(root: string, flags: { config?: string; projectConfig: boolean }, io: Io): Config {
+  if (flags.config) return loadConfig(root, path.resolve(io.cwd, flags.config));
+  return flags.projectConfig ? loadConfig(root) : structuredClone(DEFAULT_CONFIG);
 }
 
 type ReportFormat = "html" | "md" | "client";
@@ -82,7 +96,6 @@ function expandProjects(patterns: string[], cwd: string): string[] {
       continue;
     }
     const parent = path.dirname(abs);
-    const re = globToRegExp(base);
     let entries: fs.Dirent[] = [];
     try {
       entries = fs.readdirSync(parent, { withFileTypes: true });
@@ -90,7 +103,7 @@ function expandProjects(patterns: string[], cwd: string): string[] {
       throw new UsageError(`Folder not found: ${path.dirname(pattern)}`);
     }
     for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules" && re.test(entry.name)) {
+      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules" && globMatch(base, entry.name)) {
         dirs.add(path.join(parent, entry.name));
       }
     }
@@ -108,23 +121,33 @@ interface Scanned {
   result: ScanResult;
   config: Config;
   failUnder: number;
+  /** True when the config was named with `--config`, so it is the user's own and not the project's. */
+  ownConfig: boolean;
 }
 
 function scanOne(root: string, flags: ScanFlags, io: Io): Scanned {
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`Not a folder: ${root}`);
-  const config = loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined);
+  const config = configFor(root, flags, io);
   const result = scanProject(root, { config, audit: flags.audit && config.audit.enabled ? io.audit : undefined });
   applyHistory(root, result, flags.history);
-  return { root, result, config, failUnder: flags.failUnder ?? config.failUnder };
+  return { root, result, config, failUnder: flags.failUnder ?? config.failUnder, ownConfig: Boolean(flags.config) };
 }
 
 function failed(s: Scanned): boolean {
   return s.result.score < s.failUnder || open(s.result).some((f) => f.severity === "blocker");
 }
 
-function writeReport(dir: string, scanned: Scanned, format: ReportFormat): string {
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, REPORT_FILE[format]);
+/**
+ * Blockers or a low score exit with 1. A rule that failed while scanning exits
+ * with 3 even when nothing else is wrong: an incomplete scan must never look
+ * like a clean one to a CI job.
+ */
+function exitCode(scans: Scanned[]): number {
+  if (scans.some(failed)) return EXIT.failed;
+  return scans.some((s) => ruleFailed(s.result)) ? EXIT.internal : EXIT.ok;
+}
+
+function writeReport(cwd: string, dir: string, scanned: Scanned, format: ReportFormat): string {
   const { result, config } = scanned;
   const content =
     format === "html"
@@ -134,10 +157,10 @@ function writeReport(dir: string, scanned: Scanned, format: ReportFormat): strin
         : renderClientHtml(result, {
             preparedBy: config.report.preparedBy,
             clientName: config.report.clientName,
-            brand: loadBrand(scanned.root, config.report),
+            brand: loadBrand(scanned.root, config.report, { allowOutside: scanned.ownConfig }),
           });
-  fs.writeFileSync(file, content);
-  return file;
+  // Never through a link: `foreman-report` may have arrived with the project.
+  return writeReportFile(cwd, dir, REPORT_FILE[format], content);
 }
 
 function safeDirName(name: string, used: Set<string>): string {
@@ -163,13 +186,13 @@ function runScan(target: string | undefined, flags: ScanFlags, io: Io): number {
     const root = path.resolve(io.cwd, target ?? ".");
     const scanned = scanOne(root, flags, io);
     const outDir = path.resolve(io.cwd, flags.out ?? scanned.config.report.outDir);
-    const reportFile = flags.report ? writeReport(outDir, scanned, flags.report) : undefined;
+    const reportFile = flags.report ? writeReport(io.cwd, outDir, scanned, flags.report) : undefined;
     if (flags.format === "json") io.out(JSON.stringify(scanned.result, null, 2));
     else {
       io.out(renderTerminal(scanned.result, style));
       if (reportFile) io.out(`Report written to ${reportFile}\n`);
     }
-    return failed(scanned) ? EXIT.failed : EXIT.ok;
+    return exitCode([scanned]);
   }
 
   const scans = expandProjects(flags.all, io.cwd).map((root) => scanOne(root, flags, io));
@@ -178,10 +201,9 @@ function runScan(target: string | undefined, flags: ScanFlags, io: Io): number {
   const rows: SummaryRow[] = scans.map((s) => ({ result: s.result, dir: safeDirName(s.result.project.name, used) }));
   let summaryFile: string | undefined;
   if (flags.report) {
-    rows.forEach((row, i) => writeReport(path.join(outDir, row.dir), scans[i]!, flags.report!));
+    rows.forEach((row, i) => writeReport(io.cwd, path.join(outDir, row.dir), scans[i]!, flags.report!));
     if (flags.report === "html") {
-      summaryFile = path.join(outDir, "summary.html");
-      fs.writeFileSync(summaryFile, renderSummaryHtml(rows, new Date().toISOString()));
+      summaryFile = writeReportFile(io.cwd, outDir, "summary.html", renderSummaryHtml(rows, new Date().toISOString()));
     }
   }
   if (flags.format === "json") io.out(JSON.stringify({ schemaVersion: 1, projects: scans.map((s) => s.result) }, null, 2));
@@ -189,7 +211,7 @@ function runScan(target: string | undefined, flags: ScanFlags, io: Io): number {
     io.out(renderSummaryTable(rows, style));
     if (flags.report) io.out(`Reports written to ${summaryFile ?? outDir}\n`);
   }
-  return scans.some(failed) ? EXIT.failed : EXIT.ok;
+  return exitCode(scans);
 }
 
 interface ReviewFlags {
@@ -199,6 +221,7 @@ interface ReviewFlags {
   reply?: number;
   message?: string;
   config?: string;
+  projectConfig: boolean;
   history: boolean;
   dryRun?: boolean;
 }
@@ -213,7 +236,7 @@ function positiveInt(value: string): number {
 async function runReviewCommand(target: string | undefined, flags: ReviewFlags, io: Io): Promise<number> {
   const root = path.resolve(io.cwd, target ?? ".");
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`Not a folder: ${root}`);
-  const config = loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined);
+  const config = configFor(root, flags, io);
   if (flags.model) config.llm.model = flags.model;
   const provider = (io.llm ?? ((s) => createOllamaProvider({ endpoint: s.endpoint, model: s.model })))(config.llm);
   const style = io.color ? COLOR : PLAIN;
@@ -240,6 +263,7 @@ interface ExplainFlags {
   model?: string;
   format: "text" | "json";
   config?: string;
+  projectConfig: boolean;
   dryRun?: boolean;
 }
 
@@ -247,7 +271,7 @@ interface ExplainFlags {
 async function runExplainCommand(target: string | undefined, flags: ExplainFlags, io: Io): Promise<number> {
   const root = path.resolve(io.cwd, target ?? ".");
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`Not a folder: ${root}`);
-  const config = loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined);
+  const config = configFor(root, flags, io);
   if (flags.model) config.llm.model = flags.model;
   const provider = (io.llm ?? ((s) => createOllamaProvider({ endpoint: s.endpoint, model: s.model })))(config.llm);
   const result = await runExplain({ root, config, provider, dryRun: flags.dryRun });
@@ -281,6 +305,7 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .option("--context <file>", "project context file (reserved for later features)")
     .option("--fail-under <score>", "exit with code 1 if the score is below this", scoreArg)
     .option("--config <file>", "config file (default: foreman.config.json in the project)")
+    .option("--no-project-config", "ignore the project's own foreman.config.json and scan with the defaults (for code you do not trust yet)")
     .option("--no-audit", "skip the npm audit dependency check (works offline)")
     .option("--no-history", "do not write .foreman/history.json into the project")
     .action((target: string | undefined, flags: ScanFlags) => {
@@ -312,6 +337,7 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .option("--message <text>", "what you want to say when replying")
     .option("--dry-run", "print exactly what would be sent to the model, and send nothing")
     .option("--config <file>", "config file (default: foreman.config.json in the project)")
+    .option("--no-project-config", "ignore the project's own foreman.config.json and use the defaults")
     .option("--no-history", "do not save the review to .foreman/review.json")
     .action(async (target: string | undefined, flags: ReviewFlags) => {
       code = await runReviewCommand(target, flags, io);
@@ -325,6 +351,7 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .option("--format <format>", "what to print: text or json", choice(["text", "json"] as const), "text")
     .option("--dry-run", "print exactly what would be sent to the model, and send nothing")
     .option("--config <file>", "config file (default: foreman.config.json in the project)")
+    .option("--no-project-config", "ignore the project's own foreman.config.json and use the defaults")
     .action(async (target: string | undefined, flags: ExplainFlags) => {
       code = await runExplainCommand(target, flags, io);
     });
@@ -334,11 +361,14 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     return code;
   } catch (err) {
     if (err instanceof CommanderError) return err.exitCode === 0 ? EXIT.ok : EXIT.usage;
-    if (err instanceof UsageError || err instanceof ConfigError || err instanceof BrandError || err instanceof ReviewError || err instanceof LlmError) {
-      io.err(`Error: ${err.message}`);
+    // Messages can quote file names, config values or git's own output, all of
+    // which come from the project, so they are cleaned before they are printed.
+    if (err instanceof UsageError || err instanceof ConfigError || err instanceof BrandError || err instanceof ReviewError || err instanceof LlmError || err instanceof UnsafePathError) {
+      io.err(`Error: ${printable(err.message)}`);
       return EXIT.usage;
     }
-    io.err(`Internal error: ${(err as Error).stack ?? String(err)}`);
+    const stack = (err as Error).stack ?? String(err);
+    io.err(`Internal error: ${stack.split("\n").map(printable).join("\n")}`);
     return EXIT.internal;
   }
 }

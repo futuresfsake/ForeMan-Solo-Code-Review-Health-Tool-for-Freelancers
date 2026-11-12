@@ -10,7 +10,7 @@ import { LlmError, createOllamaProvider, type ChatMessage, type LlmProvider } fr
 import { createRedactor } from "../src/llm/redact.js";
 import { renderComment, renderExplain } from "../src/llm/render.js";
 import { normalizeComments, replyToComment, type ReviewComment } from "../src/llm/review.js";
-import { printable } from "../src/llm/text.js";
+import { printable } from "../src/text.js";
 import { PLAIN } from "../src/report/text.js";
 import { scanProject } from "../src/scan.js";
 import { PKG, project } from "./helpers.js";

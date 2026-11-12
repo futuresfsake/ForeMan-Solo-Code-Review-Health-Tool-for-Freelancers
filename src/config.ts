@@ -22,6 +22,8 @@ export interface Config {
   ignore: IgnoreEntry[];
   checklist: { attest: Record<string, string> };
   report: { outDir: string; projectName: string; preparedBy: string; clientName: string; logo: string; accentColor: string };
+  /** Settings for `foreman-solo review`. The static scan never reads these. */
+  llm: { provider: "ollama"; model: string; endpoint: string };
 }
 
 export const CONFIG_FILE = "foreman.config.json";
@@ -42,7 +44,20 @@ export const DEFAULT_CONFIG: Config = {
   ignore: [],
   checklist: { attest: {} },
   report: { outDir: "./foreman-report", projectName: "", preparedBy: "", clientName: "", logo: "", accentColor: "" },
+  llm: { provider: "ollama", model: "qwen2.5-coder:7b", endpoint: "http://localhost:11434" },
 };
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** ADR-0007: until there is a consent step, code may only be sent to this machine. */
+export function isLocalEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return (url.protocol === "http:" || url.protocol === "https:") && LOCAL_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 const SEVERITIES = new Set(["blocker", "should-fix", "nice-to-have"]);
 
@@ -138,6 +153,23 @@ export function mergeConfig(raw: unknown): Config {
         throw new ConfigError(`"report.accentColor" must be a colour like "#2f5bd8".`);
       }
       cfg.report.accentColor = raw.report.accentColor;
+    }
+  }
+  if (raw.llm !== undefined) {
+    if (!isObject(raw.llm)) throw new ConfigError(`"llm" must be an object.`);
+    const l = raw.llm;
+    if (l.provider !== undefined && l.provider !== "ollama") {
+      throw new ConfigError(`"llm.provider" must be "ollama"; hosted providers are not supported yet.`);
+    }
+    if (l.model !== undefined) {
+      if (typeof l.model !== "string" || l.model.trim() === "") throw new ConfigError(`"llm.model" must be a model name.`);
+      cfg.llm.model = l.model.trim();
+    }
+    if (l.endpoint !== undefined) {
+      if (typeof l.endpoint !== "string" || !isLocalEndpoint(l.endpoint)) {
+        throw new ConfigError(`"llm.endpoint" must point at this machine (localhost or 127.0.0.1), so code is never sent elsewhere.`);
+      }
+      cfg.llm.endpoint = l.endpoint.replace(/\/+$/, "");
     }
   }
   return cfg;

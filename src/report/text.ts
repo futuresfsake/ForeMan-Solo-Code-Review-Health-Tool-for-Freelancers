@@ -30,6 +30,23 @@ export function open(result: ScanResult): Finding[] {
   return result.findings.filter((f) => !f.suppressed);
 }
 
+/**
+ * What limits this result, in plain sentences. Every report format prints
+ * these, so a config that came with the project cannot quietly narrow the scan
+ * and a file that could not be read as code cannot go unnoticed.
+ */
+export function limits(result: ScanResult): string[] {
+  const out: string[] = [];
+  const cov = result.coverage;
+  if (cov.configChanges.length > 0) {
+    out.push(`The config in effect changes the scan: ${cov.configChanges.join(", ")}. If it came with the project, read it, or use --no-project-config to scan with the defaults.`);
+  }
+  if (cov.filesNotAnalysed > 0) {
+    out.push(`${cov.filesNotAnalysed} source file(s) could not be analysed as code, so the checklist items that depend on the code are unverified. See the warnings.`);
+  }
+  return out;
+}
+
 export function verdict(result: ScanResult): string {
   const failing = result.checklist.filter((c) => c.status === "fail").length;
   const unverified = result.checklist.filter((c) => c.status === "unverified").length;
@@ -77,6 +94,7 @@ export function renderTerminal(result: ScanResult, s: Style): string {
 
   const cov = result.coverage;
   out.push(s.dim(`Checked ${cov.filesScanned} file(s), ${cov.routesFound} route(s), ${cov.rulesRun.length} rule(s).`));
+  for (const l of limits(result)) out.push(s.yellow(l));
   for (const skip of cov.rulesSkipped) out.push(s.dim(`Not checked: ${skip.id} (${skip.reason}).`));
   for (const w of result.warnings) out.push(s.yellow(`Warning: ${w}`));
   out.push("", s.dim(DISCLAIMER), "");
@@ -106,9 +124,17 @@ export function renderSummaryTable(rows: SummaryRow[], s: Style): string {
 export function renderMarkdown(result: ScanResult): string {
   const findings = open(result);
   const suppressed = result.findings.filter((f) => f.suppressed);
-  const cell = (t: string): string => t.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  // Text from the project (names, paths, reasons) must stay text: no table
+  // breaks, no links, no HTML when the file is rendered.
+  const cell = (t: string): string =>
+    t
+      .replace(/\r?\n/g, " ")
+      .replace(/[\\`[\]|]/g, "\\$&")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   const out: string[] = [
-    `# Code health report: ${result.project.name}`,
+    `# Code health report: ${cell(result.project.name)}`,
     "",
     `Scanned ${result.scannedAt.slice(0, 10)} with Foreman Solo ${result.toolVersion}.`,
     "",
@@ -137,7 +163,8 @@ export function renderMarkdown(result: ScanResult): string {
     out.push("");
   }
   out.push("## What was checked", "", `${result.coverage.filesScanned} file(s), ${result.coverage.routesFound} route(s). Rules run: ${result.coverage.rulesRun.join(", ") || "none"}.`, "");
-  for (const skip of result.coverage.rulesSkipped) out.push(`- Not checked: ${skip.id} (${skip.reason})`);
+  for (const l of limits(result)) out.push(`- ${cell(l)}`);
+  for (const skip of result.coverage.rulesSkipped) out.push(`- Not checked: ${skip.id} (${cell(skip.reason)})`);
   for (const w of result.warnings) out.push(`- Warning: ${cell(w)}`);
   out.push("", `> ${DISCLAIMER}`, "");
   return out.join("\n");

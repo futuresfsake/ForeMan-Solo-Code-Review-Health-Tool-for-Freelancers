@@ -24,4 +24,4 @@
 
 **Why did my score drop with no code change?** A newly disclosed CVE in a dependency.
 
-**Can the LLM review see my code?** Only if you enable it (M6+). The default is a local model through Ollama, so nothing leaves your machine. A hosted provider would need your key and your explicit consent, and you'd see what is sent first. It is experimental: small local models can be wrong, and the static scan never depends on it.
+**Can the LLM review see my code?** Only if you run `foreman-solo review`; `scan` never does. It uses a local model through Ollama, so nothing leaves your machine, and endpoints that are not on your machine are rejected. Secrets are masked first, and `review --dry-run` shows exactly what would be sent. A hosted provider is not built; it would need your explicit consent. It is experimental: small local models can be wrong, and the static scan never depends on it.

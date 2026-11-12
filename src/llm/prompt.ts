@@ -91,3 +91,49 @@ Include severity and confidence only when stance is "revise".`;
     { role: "user", content: user },
   ];
 }
+
+export interface ExplainContext {
+  name: string;
+  framework: string;
+  scripts: string[];
+  dependencies: string[];
+  files: string[];
+  moreFiles: number;
+  routes: { method: string; path: string; file: string; line: number; middleware: string[] }[];
+  findings: { ruleId: string; file: string; line: number; severity: string; message: string }[];
+  samples: { path: string; text: string; truncated: boolean }[];
+}
+
+/** Walkthrough prompt (FR-28): facts from the scan go in first, code samples last. */
+export function explainMessages(ctx: ExplainContext): ChatMessage[] {
+  const list = <T>(items: T[], f: (t: T) => string, none: string): string => (items.length ? items.map(f).join("\n") : none);
+  const user = `A freelance developer was handed this project and has never seen it. Explain it so they can start work safely.
+
+Project: ${ctx.name}
+Framework detected by the scanner: ${ctx.framework}
+npm scripts: ${ctx.scripts.join(", ") || "none"}
+Dependencies: ${ctx.dependencies.join(", ") || "none"}
+
+Source files${ctx.moreFiles ? ` (first ${ctx.files.length}, ${ctx.moreFiles} more not listed)` : ""}:
+${ctx.files.map((f) => `- ${f}`).join("\n")}
+
+Routes found by the scanner:
+${list(ctx.routes, (r) => `- ${r.method} ${r.path} (${r.file}:${r.line}) middleware: ${r.middleware.join(", ") || "none"}`, "- none found")}
+
+Facts from a deterministic scanner. They are true; build on them, do not contradict them:
+${list(ctx.findings, (f) => `- ${f.ruleId} at ${f.file}:${f.line} (${f.severity}): ${f.message}`, "- none")}
+
+Start of the most connected files:
+${ctx.samples.map((s) => `=== ${s.path}${s.truncated ? " (start of file only)" : ""} ===\n${s.text}`).join("\n\n")}
+
+Only describe what you can see above. Use only file paths from the lists above. Answer with JSON only, in this shape:
+{"overview":"<what the app does, in plain words, 2-3 sentences>","areas":[{"name":"<short name>","files":["<path>"],"what":"<what this part does>"}],"risks":[{"file":"<path>","severity":"blocker|should-fix|nice-to-have","body":"<risky pattern and why it matters>"}],"beforeYouStart":["<a fix or check to do before changing anything>"]}
+At most 6 areas, 6 risks and 6 beforeYouStart items. If you are unsure of something, leave it out.`;
+  return [
+    {
+      role: "system",
+      content: `${PERSONA} You are explaining a codebase you only partly see. Say so rather than guess.`,
+    },
+    { role: "user", content: user },
+  ];
+}

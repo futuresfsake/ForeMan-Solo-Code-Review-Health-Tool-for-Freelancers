@@ -154,7 +154,15 @@ export function mergeConfig(raw: unknown): Config {
     }
   }
   if (isObject(raw.report)) {
-    if (typeof raw.report.outDir === "string") cfg.report.outDir = raw.report.outDir;
+    if (typeof raw.report.outDir === "string") {
+      // A config can arrive with a project you did not write. It may name a
+      // folder below the working folder and nothing else; `--out` is for the rest.
+      const dir = raw.report.outDir.replace(/\\/g, "/");
+      if (dir.trim() === "" || path.posix.isAbsolute(dir) || path.win32.isAbsolute(dir) || dir.includes(":") || dir.split("/").includes("..")) {
+        throw new ConfigError(`"report.outDir" must be a folder below the one you run the scan from, such as "./foreman-report". Use --out to write anywhere else.`);
+      }
+      cfg.report.outDir = raw.report.outDir;
+    }
     if (typeof raw.report.projectName === "string") cfg.report.projectName = raw.report.projectName;
     if (typeof raw.report.preparedBy === "string") cfg.report.preparedBy = raw.report.preparedBy;
     if (typeof raw.report.clientName === "string") cfg.report.clientName = raw.report.clientName;

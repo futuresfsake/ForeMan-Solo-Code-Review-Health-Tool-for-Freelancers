@@ -7,9 +7,9 @@
 | `scan` (static pass) | Nothing | n/a |
 | `npm audit` | Package names/versions from the lockfile (npm's standard behaviour) | npm registry |
 | Reports/history | Nothing; written to local disk | n/a |
-| LLM features (M6+, opt-in) | Diff, dependent file contents, static findings | The LLM provider the user configures, using the user's key |
+| `foreman-solo review` (opt-in) | The git diff, related source files and the scan's findings, with secrets masked | A model on this machine through Ollama (`localhost` only). `scan` never does this |
 
-No telemetry, no accounts, no update pings. Before any LLM call the tool must show what will be sent and redact detected secrets.
+No telemetry, no accounts, no update pings. Before anything is put in an LLM prompt, detected secrets are masked, and `foreman-solo review --dry-run` prints exactly what would be sent without sending it. The masking is a safety net: a secret the scan cannot recognise is not masked. The only provider today runs on this machine and non-local endpoints are rejected. If a hosted provider is ever added, it must show what will be sent and ask for explicit consent first. `.foreman/review.json` holds the model's comments; it is git-ignored by `init`.
 
 ## What Foreman stores
 

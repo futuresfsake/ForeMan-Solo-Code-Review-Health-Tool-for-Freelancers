@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { safeGitArgs } from "../git.js";
+import { gitProgram, gitSpawnOptions, safeGitArgs } from "../git.js";
 import fs from "node:fs";
 import path from "node:path";
 import { lineOf } from "../ast.js";
@@ -18,10 +18,42 @@ export const KEY_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "Private key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/ },
 ];
 
-/** The password in "scheme://user:password@host". */
-const URL_PASSWORD = /\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"`]+:([^\s@/'"`]+)@/i;
-/** A JSON Web Token: three base64url parts, the first two starting with an encoded "{". */
-const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/;
+/*
+ * The two matchers below are written as bounded walks, not as one pattern over
+ * the whole line. A project being scanned may be hostile, and a single pattern
+ * of the form "run of characters, then something that is missing" takes time
+ * in proportion to the square of the line length: one 250 KB line cost seven
+ * seconds. Each walk below looks at every character a fixed number of times.
+ */
+
+/** How far to look on each side of a "://"; real connection strings are far shorter. */
+const URL_SCHEME_CHARS = 32;
+const URL_USERINFO_CHARS = 300;
+const URL_SCHEME = /\b[a-z][a-z0-9+.-]*$/i;
+const URL_USERINFO = /^[^\s:/@'"`]+:([^\s@/'"`]+)@/;
+
+/** The password in "scheme://user:password@host", or null when the line has none. */
+export function urlPassword(line: string): string | null {
+  for (let at = line.indexOf("://"); at !== -1; at = line.indexOf("://", at + 3)) {
+    if (!URL_SCHEME.test(line.slice(Math.max(0, at - URL_SCHEME_CHARS), at))) continue;
+    const m = URL_USERINFO.exec(line.slice(at + 3, at + 3 + URL_USERINFO_CHARS));
+    if (m) return m[1]!;
+  }
+  return null;
+}
+
+const JWT_HEAD = /\beyJ[A-Za-z0-9_-]{8,}/g;
+const JWT_REST = /\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/y;
+
+/** True when the line holds a JSON Web Token: three base64url parts, the first two starting with an encoded "{". */
+export function hasJwt(line: string): boolean {
+  JWT_HEAD.lastIndex = 0;
+  for (let m = JWT_HEAD.exec(line); m; m = JWT_HEAD.exec(line)) {
+    JWT_REST.lastIndex = m.index + m[0].length;
+    if (JWT_REST.test(line)) return true;
+  }
+  return false;
+}
 
 const PLACEHOLDER = /your|example|placeholder|changeme|xxxx|<.*>|\*\*\*|todo|dummy|sample|replace|insert|\$\{/i;
 const EXAMPLE_ENV = /\.(example|sample|template|dist|defaults?)$/i;
@@ -41,11 +73,14 @@ function looksLikeSecretValue(value: string, envFallback: boolean): boolean {
   // All-lowercase words are almost always a name ("authorization", "x-api-key").
   if (/^[a-z]+(?:[-_.:][a-z]+)*$/.test(value)) return false;
   if (/^(.)\1+$/.test(value)) return false;
-  return !PLACEHOLDER.test(value);
+  // Only the start is tested: a placeholder says so early, and the pattern is slow on a very long value.
+  return !PLACEHOLDER.test(value.slice(0, 256));
 }
 
 function git(root: string, args: string[]): number | null {
-  const res = spawnSync("git", safeGitArgs(root, args), { stdio: "ignore", timeout: 10_000 });
+  const program = gitProgram(root);
+  if (!program) return null;
+  const res = spawnSync(program, safeGitArgs(root, args), { ...gitSpawnOptions(), stdio: "ignore", timeout: 10_000 });
   return res.error ? null : res.status;
 }
 
@@ -67,12 +102,12 @@ export const secretsRule: Rule = {
           findings.push({ ruleId: "secrets/hardcoded-api-key", file: file.path, line: i + 1, message: `${label} in source: ${shown}.` });
           return;
         }
-        if (JWT.test(line)) {
+        if (hasJwt(line)) {
           findings.push({ ruleId: "secrets/hardcoded-api-key", file: file.path, line: i + 1, message: "JSON Web Token in source: [masked]." });
           return;
         }
-        const u = URL_PASSWORD.exec(line);
-        if (u && !/^(\$\{|<|%7B|\{)/.test(u[1]) && !PLACEHOLDER.test(u[1]) && u[1].length >= 4 && !DEFAULT_CREDENTIALS.has(u[1].toLowerCase())) {
+        const password = urlPassword(line);
+        if (password && !/^(\$\{|<|%7B|\{)/.test(password) && !PLACEHOLDER.test(password) && password.length >= 4 && !DEFAULT_CREDENTIALS.has(password.toLowerCase())) {
           findings.push({ ruleId: "secrets/hardcoded-password", file: file.path, line: i + 1, message: "A connection string contains a hardcoded password: [masked]." });
         }
       });

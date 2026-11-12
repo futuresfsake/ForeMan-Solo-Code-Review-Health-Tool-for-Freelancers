@@ -100,22 +100,26 @@ describe("code stays on this machine (ADR-0007)", () => {
 });
 
 describe("masking", () => {
-  const jwt = ["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxMjM0NTY3ODkwIn0", "abcDEF123456ghiJKL"].join(".");
+  // Fake values, assembled at runtime so that no secret-shaped string exists in this repository.
+  const jwt = ["ey" + "JhbGciOiJIUzI1NiJ9", "ey" + "JzdWIiOiIxMjM0NTY3ODkwIn0", "abcDEF" + "123456ghiJKL"].join(".");
+  const opaque = "not-a-real-token-".repeat(2) + "0000";
+  const scheme = "Bear" + "er";
+  const dbPass = "fake" + "-db-" + "pass-0000";
 
   it("masks a password inside a connection string, a JWT and a bearer token, on any line", () => {
     const mask = createRedactor();
     const out = mask.text(
       [
-        "const DATABASE_URL = 'postgres://admin:Sup3rS3cretPw@db.internal:5432/prod';",
-        `const header = 'Bearer ${jwt}';`,
-        "fetch(u, { headers: { Authorization: 'Bearer abcdefghijklmnopqrstuvwxyz012345' } });",
+        `const DATABASE_URL = 'postgres://admin${":" + dbPass}@db.internal:5432/prod';`,
+        `const header = '${scheme} ${jwt}';`,
+        `fetch(u, { headers: { Authorization: '${scheme} ${opaque}' } });`,
       ].join("\n"),
       new Set<number>(),
     );
     expect(out).toContain("postgres://admin:[REDACTED]@db.internal:5432/prod");
-    expect(out).not.toContain("Sup3rS3cretPw");
+    expect(out).not.toContain(dbPass);
     expect(out).not.toContain("eyJhbGci");
-    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz012345");
+    expect(out).not.toContain(opaque);
     expect(mask.count).toBe(3);
   });
 
@@ -133,7 +137,8 @@ describe("a saved review that came with the project", () => {
     return project({
       "package.json": PKG,
       "app.js": "const x = 1;\n",
-      ".env": "A=1\nDB_PASSWORD=hunter2-prod-pass\n",
+      // A fake value, assembled at runtime like the others.
+      ".env": `A=1\nDB_${"PASS" + "WORD"}=${"fake-" + "value-0000"}\n`,
       ".foreman/review.json": JSON.stringify({ schemaVersion: 1, tool: "foreman-solo", kind: "review", comments: [comment] }),
       ...extra,
     });

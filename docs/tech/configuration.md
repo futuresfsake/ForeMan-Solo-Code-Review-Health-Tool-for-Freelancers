@@ -6,6 +6,8 @@ Precedence: CLI flag > config file > default. Zero configuration works.
 
 Placed in the root of the scanned project (or passed with `--config`). Unknown keys are rejected so typos are not silently ignored.
 
+A config in the project folder may have been written by whoever wrote the project. See [Config that comes with a project](#config-that-comes-with-a-project).
+
 ```json
 {
   "ignorePaths": ["legacy", "scripts/**"],
@@ -37,17 +39,27 @@ Placed in the root of the scanned project (or passed with `--config`). Unknown k
 | `sensitiveRoutes.publicPaths` | login, register, logout, refresh, verify, forgot, reset, oauth, callback, webhook, health and similar | Paths that are public on purpose. `/reset` also covers `/reset-password` |
 | `authMiddlewareNames` | `[]` | Extra middleware names that count as authentication. Common names (auth, jwt, passport, protect, guard) are built in |
 | `weights`, `confidenceFactor` | see above | Score formula inputs (see lld.md) |
-| `rules.<id>` | catalog default | `"off"` or a severity override |
+| `rules.<id>` | catalog default | `"off"` or a severity override. A go-live item whose rule is off becomes `unverified`, not `pass` |
 | `ignore[]` | `[]` | Suppress a rule, optionally for a file glob. `reason` is required and shown in the report |
 | `checklist.attest.<id>` | none | A note confirming an item that cannot be checked from code. Turns `unverified` into `pass`; never overrides `fail` |
-| `report.outDir` | `./foreman-report` | Where report files go |
+| `report.outDir` | `./foreman-report` | Where report files go. Must be a relative folder below the one you run the scan from: an absolute path, a drive letter or `..` is a config error (exit 2). To write anywhere else, use `--out` on the command line |
 | `report.projectName` | package name or folder name | Name shown in reports |
 | `report.preparedBy`, `report.clientName` | empty | Shown on the client report (`--report client`) |
-| `report.logo` | empty | Path to your logo, relative to the project: png, jpg, gif, webp or svg, up to 256 KB. Embedded in the client report, so the report stays one file with no external requests. A missing or oversized file is a usage error (exit 2) |
+| `report.logo` | empty | Path to your logo, relative to the project and inside it: png, jpg, gif, webp or svg, up to 256 KB. A logo kept elsewhere is accepted only from a config you pass with `--config`. Embedded in the client report, so the report stays one file with no external requests. A missing or oversized file is a usage error (exit 2) |
 | `llm.provider` | `ollama` | Only `ollama` exists. Used by `foreman-solo review`; the scan ignores `llm` |
 | `llm.model` | `qwen2.5-coder:7b` | The Ollama model to use. Install it first with `ollama pull <model>`. `--model` overrides it. A name ending in `cloud` (an Ollama cloud model) is rejected, because it would send code to Ollama's servers |
 | `llm.endpoint` | `http://localhost:11434` | Where Ollama listens. Must be `localhost`, `127.0.0.1` or `[::1]`: anything else is rejected, and redirects are not followed, so code is never sent to another machine |
 | `report.accentColor` | empty | A `#rrggbb` colour used for the client report's top border and section markers |
+
+## Config that comes with a project
+
+When you scan code someone else wrote, `foreman.config.json` in that folder is their file. It can ignore folders, turn rules off, set every score weight to zero, name their own middleware as "authentication" and attest checklist items. Three things keep that visible and contained:
+
+- **Every output says what the config changed.** The terminal, HTML, Markdown and client reports name the keys that differ from the defaults (`coverage.configChanges` in JSON), for example `The config in effect changes the scan: ignorePaths, weights, rules.`
+- **`--no-project-config` ignores the file** and scans with the defaults. Use it for the first scan of a project you do not trust yet. `--config <file>` uses your own file instead.
+- **The config cannot reach outside the project.** `report.outDir` must stay below the working folder, `report.logo` must be a file inside the project, and `llm.endpoint` must be this machine.
+
+The same applies to `// foreman-ignore` comments in the code: they are counted in the terminal output and listed with their reasons in the HTML and Markdown reports.
 
 ## Inline suppression
 

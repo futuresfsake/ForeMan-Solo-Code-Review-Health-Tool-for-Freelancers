@@ -25,6 +25,20 @@ describe("secrets", () => {
     expect(JSON.stringify(r)).not.toContain("Sup3r-S3cret!");
   });
 
+  it("flags a password in a connection string and a literal JWT, without echoing them", () => {
+    const pw = ["Pa55", "w0rd-xyz"].join("");
+    const jwt = ["eyJhbGciOiJIUzI1", "eyJzdWIiOiIxMjM0NTY3", "abcDEF123456xyz"].join(".");
+    const r = scan({
+      "config.js": `const url = "postgres://admin:${pw}@db.example.com/app";\nconst t = "${jwt}";\n`,
+      "ok.js": 'const a = "postgres://admin:${DB_PASS}@host/app";\nconst b = "redis://localhost:6379";\n',
+    });
+    const f = r.findings.filter((x) => x.file === "config.js");
+    expect(f.map((x) => x.ruleId).sort()).toEqual(["secrets/hardcoded-api-key", "secrets/hardcoded-password"]);
+    expect(r.findings.some((x) => x.file === "ok.js" && x.ruleId.startsWith("secrets/"))).toBe(false);
+    expect(JSON.stringify(r)).not.toContain(pw);
+    expect(JSON.stringify(r)).not.toContain(jwt);
+  });
+
   it("does not flag names, placeholders, URLs or env lookups", () => {
     const r = scan({
       "ok.js": `

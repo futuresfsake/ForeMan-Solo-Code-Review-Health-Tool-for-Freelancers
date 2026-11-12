@@ -10,6 +10,7 @@ import { createRedactor } from "./redact.js";
 import { explainMessages, type ExplainContext } from "./prompt.js";
 import { extractJson } from "./review.js";
 import type { LlmProvider } from "./provider.js";
+import { printable } from "./text.js";
 
 export interface ExplainArea {
   name: string;
@@ -51,15 +52,21 @@ export interface ExplainOptions {
 }
 
 const SEVERITIES = new Set<string>(["blocker", "should-fix", "nice-to-have"]);
-const MAX_FILES_LISTED = 80;
-const MAX_SAMPLE_CHARS = 10_000;
+const MAX_FILES_LISTED = 60;
+const MAX_ROUTES = 40;
+const MAX_FINDINGS = 30;
+const MAX_NAMES = 60;
+/** The model has 8192 tokens for the prompt and its answer; code runs at about three characters a token. */
+const MAX_PROMPT_CHARS = 20_000;
+const MAX_SAMPLE_CHARS = 9_000;
 const MAX_SAMPLE_FILE_CHARS = 1_800;
 const MAX_ITEMS = 8;
 const MAX_TEXT = 500;
-const BAD_FORMAT = "The model did not answer in the expected format. Try again, or set a different llm.model.";
+const SEVERITY_ORDER: Record<Severity, number> = { blocker: 0, "should-fix": 1, "nice-to-have": 2 };
+const BAD_FORMAT ="The model did not answer in the expected format. Try again, or set a different llm.model.";
 
 function clip(value: unknown, max = MAX_TEXT): string {
-  const s = typeof value === "string" ? value.trim() : "";
+  const s = printable(value);
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
@@ -157,33 +164,54 @@ export async function runExplain(options: ExplainOptions): Promise<ExplainResult
     used += size;
     samples.push({ path: p, text: mask.text(text.slice(0, MAX_SAMPLE_FILE_CHARS), flagged.get(p) ?? new Set<number>()), truncated: text.length > MAX_SAMPLE_FILE_CHARS });
   }
-  result.filesRead = samples.map((s) => s.path);
-  if (samples.length < known.size) result.notes.push(`Read ${samples.length} of ${known.size} source files (the most connected ones); the rest are listed by name only.`);
-  if (mask.count > 0) result.notes.push(`${mask.count} secret-like value(s) were masked before anything was sent to the model.`);
-
   const scripts = typeof pkg?.scripts === "object" && pkg.scripts !== null ? Object.keys(pkg.scripts) : [];
   const deps = typeof pkg?.dependencies === "object" && pkg.dependencies !== null ? Object.keys(pkg.dependencies) : [];
-  const findings = scan.findings.filter((f) => !f.suppressed);
+  // Blockers first, so that if the list is cut it is the least serious findings that go.
+  const findings = scan.findings.filter((f) => !f.suppressed).sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
   result.staticFindings = findings.length;
 
+  // Everything is capped: a prompt larger than the model's context is cut
+  // silently by Ollama, and what it drops could be the scan's facts.
   const ctx: ExplainContext = {
     name: result.project,
     framework: result.framework,
-    scripts,
-    dependencies: deps,
+    scripts: scripts.slice(0, MAX_NAMES),
+    dependencies: deps.slice(0, MAX_NAMES),
     files: [...known].sort().slice(0, MAX_FILES_LISTED),
     moreFiles: Math.max(0, known.size - MAX_FILES_LISTED),
-    routes: adapter.routes.map((r) => ({ method: r.method, path: r.path, file: r.file, line: r.line, middleware: r.middleware })),
-    findings: findings.map((f) => ({
+    routes: adapter.routes.slice(0, MAX_ROUTES).map((r) => ({ method: r.method, path: r.path, file: r.file, line: r.line, middleware: r.middleware })),
+    moreRoutes: Math.max(0, adapter.routes.length - MAX_ROUTES),
+    findings: findings.slice(0, MAX_FINDINGS).map((f) => ({
       ruleId: f.ruleId,
       file: f.file,
       line: f.line,
       severity: f.severity,
       message: f.ruleId.startsWith("secrets/") ? "a secret value is hardcoded here (value withheld)" : f.message,
     })),
+    moreFindings: Math.max(0, findings.length - MAX_FINDINGS),
     samples,
   };
-  const messages = explainMessages(ctx);
+  const size = (m: { content: string }[]): number => m.reduce((n, x) => n + x.content.length, 0);
+  let messages = explainMessages(ctx);
+  while (size(messages) > MAX_PROMPT_CHARS && samples.length > 1) {
+    samples.pop();
+    messages = explainMessages(ctx);
+  }
+  if (size(messages) > MAX_PROMPT_CHARS) {
+    // Still too large with one file left: shorten that file rather than lose the facts above it.
+    const over = size(messages) - MAX_PROMPT_CHARS;
+    const only = samples[0]!;
+    only.text = only.text.slice(0, Math.max(0, only.text.length - over));
+    only.truncated = true;
+    messages = explainMessages(ctx);
+  }
+
+  result.filesRead = samples.map((s) => s.path);
+  if (samples.length < known.size) result.notes.push(`Read ${samples.length} of ${known.size} source files (the most connected ones); the rest are listed by name only.`);
+  if (ctx.moreRoutes > 0) result.notes.push(`Only the first ${MAX_ROUTES} of ${adapter.routes.length} routes were sent to the model.`);
+  if (ctx.moreFindings > 0) result.notes.push(`Only the ${MAX_FINDINGS} most serious of ${findings.length} scan findings were sent to the model.`);
+  if (mask.count > 0) result.notes.push(`${mask.count} secret-like value(s) were masked before anything was sent to the model.`);
+
   if (options.dryRun) {
     result.promptPreview = messages.map((m) => `[${m.role}]\n${m.content}`).join("\n\n");
     return result;

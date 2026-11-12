@@ -46,9 +46,9 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
 | **Private by design** | No accounts, no telemetry, nothing uploaded. |
 
-Not built yet: simulated senior review (LLM, opt-in, with confidence levels and pushback), explain-my-code mode, and Fastify and Next.js support. See the [roadmap](#roadmap).
+Experimental: `foreman-solo review` asks a local model to review your current git changes, with the scan's findings as facts, a confidence level on every comment, and a way to push back. Not built yet: explain-my-code mode, and Fastify and Next.js support. See the [roadmap](#roadmap).
 
-**What to rely on.** The dependable part is the static scan: it is deterministic, offline and never uses an LLM. The planned LLM review is an optional, experimental extra. It will run on a local model through [Ollama](https://ollama.com) by default, so nothing leaves your machine ([ADR-0007](docs/decisions/adr/0007-llm-provider-ollama-first.md)). Small local models can be wrong, so every comment will carry a confidence level and say it is machine-generated. Treat it as a second opinion, never as the review.
+**What to rely on.** The dependable part is the static scan: it is deterministic, offline and never uses an LLM. The LLM review is an optional, experimental extra. It runs on a model on your own machine through [Ollama](https://ollama.com), so nothing leaves it, secrets are masked first, and `--dry-run` shows exactly what would be sent ([ADR-0007](docs/decisions/adr/0007-llm-provider-ollama-first.md)). Small local models can be wrong or miss things, so every comment says it is machine-generated and carries a confidence level. Treat it as a second opinion, never as the review.
 
 ## Quick start
 
@@ -70,6 +70,12 @@ npx foreman-solo scan --fail-under 80
 
 # Add a starter config and a weekly scan workflow to a project
 npx foreman-solo init --ci
+
+# Experimental: have a local model (Ollama) review your uncommitted changes
+ollama pull qwen2.5-coder:7b
+npx foreman-solo review --dry-run        # see exactly what would be sent
+npx foreman-solo review                  # run the review
+npx foreman-solo review --reply 1 --message "this is capped upstream"
 ```
 
 The package is not on npm yet, so the `npx` commands above will work only after the first release. Until then, run it from a clone:
@@ -133,7 +139,7 @@ Automated static review, not a security audit, penetration test or certification
   terminal report · HTML / Markdown / JSON · local history for trends
 ```
 
-The static pass is deterministic and offline (apart from `npm audit`). The later senior-review layer feeds those confirmed facts to an LLM instead of making it reason from nothing. See [ADR-0002](docs/decisions/adr/0002-two-layer-static-then-llm.md) and the [high-level design](docs/design/hld.md).
+The static pass is deterministic and offline (apart from `npm audit`). The optional `review` command feeds those confirmed facts to a local LLM instead of making it reason from nothing. See [ADR-0002](docs/decisions/adr/0002-two-layer-static-then-llm.md) and the [high-level design](docs/design/hld.md).
 
 ## Configuration
 
@@ -175,7 +181,8 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M7 | Plain-English risk, branded client report | Done |
 | M8 | Ongoing-care workflow sample | Done (`init --ci`) |
 | M10 | More frameworks | NestJS done on fixtures; Fastify and Next.js not started |
-| M6, M9 | LLM senior review, explain mode | Not started |
+| M6 | LLM review on a local model | Built, experimental (`review`) |
+| M9 | Explain mode | Not started |
 
 Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 

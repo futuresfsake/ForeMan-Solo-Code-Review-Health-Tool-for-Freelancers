@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { SAFE_DIFF_FLAGS, UnsafeGitConfigError, filterOverrides, safeGitArgs } from "../git.js";
 
 export class ReviewError extends Error {}
 
@@ -81,12 +82,14 @@ export function parseDiff(text: string): DiffFile[] {
 export function getDiff(root: string, base: string): string {
   if (base.startsWith("-")) throw new ReviewError(`Not a valid git reference: ${base}`);
   try {
+    // Nothing named in the repository's own git settings may run (see src/git.ts).
     return execFileSync(
       "git",
-      ["-C", root, "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--relative", "--unified=3", base, "--"],
+      safeGitArgs(root, [...filterOverrides(root), "-c", "core.quotePath=false", "diff", "--no-color", ...SAFE_DIFF_FLAGS, "--relative", "--unified=3", base, "--"]),
       { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (err) {
+    if (err instanceof UnsafeGitConfigError) throw new ReviewError(err.message);
     const stderr = String((err as { stderr?: unknown }).stderr ?? "");
     if (/not a git repository/i.test(stderr)) {
       throw new ReviewError("This folder is not a git repository, so there is no change to review.");

@@ -1,0 +1,23 @@
+#!/bin/sh
+# Stops a commit that would add a secret. Fast on purpose: it only looks at
+# what is staged. Turn the hooks on once per clone with:  npm run hooks
+#
+# With gitleaks installed (free, https://github.com/gitleaks/gitleaks) the
+# staged changes go through its full rule set. Without it, a short list of
+# well-known key shapes is checked, so the hook still works on a bare machine.
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner || {
+    echo "pre-commit: gitleaks found a secret-shaped value in the staged changes. Nothing was committed." >&2
+    exit 1
+  }
+  exit 0
+fi
+
+pattern='(AKIA|ASIA)[0-9A-Z]{16}|[sr]k_live_[0-9a-zA-Z]{16,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|npm_[A-Za-z0-9]{36}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+if git diff --cached --no-color -U0 | grep -E '^\+' | grep -Ev '^\+\+\+' | grep -Eq -e "$pattern"; then
+  echo "pre-commit: a staged line looks like a real credential. Nothing was committed." >&2
+  echo "pre-commit: build test values from fragments at runtime (see tests/helpers.ts)." >&2
+  exit 1
+fi
+exit 0

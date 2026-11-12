@@ -46,7 +46,7 @@ Foreman Solo is built for running a freelance business, not just linting code. I
 | **Multi-client view** | `scan --all ./clients/*` prints one summary table with score, trend and last-scanned date. |
 | **Private by design** | No accounts, no telemetry, nothing uploaded. |
 
-Experimental: `foreman-solo review` asks a local model to review your current git changes, with the scan's findings as facts, a confidence level on every comment, and a way to push back. Not built yet: explain-my-code mode, and Fastify and Next.js support. See the [roadmap](#roadmap).
+Experimental: `foreman-solo review` asks a local model to review your current git changes, with the scan's findings as facts, a confidence level on every comment, and a way to push back. Experimental too: `foreman-solo explain` walks you through an unfamiliar project. Not built yet: Fastify and Next.js support. See the [roadmap](#roadmap).
 
 **What to rely on.** The dependable part is the static scan: it is deterministic, offline and never uses an LLM. The LLM review is an optional, experimental extra. It runs on a model on your own machine through [Ollama](https://ollama.com), so nothing leaves it, secrets are masked first, and `--dry-run` shows exactly what would be sent ([ADR-0007](docs/decisions/adr/0007-llm-provider-ollama-first.md)). Small local models can be wrong or miss things, so every comment says it is machine-generated and carries a confidence level. Treat it as a second opinion, never as the review.
 
@@ -76,6 +76,10 @@ ollama pull qwen2.5-coder:7b
 npx foreman-solo review --dry-run        # see exactly what would be sent
 npx foreman-solo review                  # run the review
 npx foreman-solo review --reply 1 --message "this is capped upstream"
+
+# Experimental: a plain-language walkthrough of a project you have just been handed
+npx foreman-solo explain --dry-run       # see exactly what would be sent
+npx foreman-solo explain
 ```
 
 The package is not on npm yet, so the `npx` commands above will work only after the first release. Until then, run it from a clone:
@@ -182,7 +186,7 @@ Foreman Solo is provided under the MIT licence with no warranty. Its reports are
 | M8 | Ongoing-care workflow sample | Done (`init --ci`) |
 | M10 | More frameworks | NestJS done on fixtures; Fastify and Next.js not started |
 | M6 | LLM review on a local model | Built, experimental (`review`) |
-| M9 | Explain mode | Not started |
+| M9 | `foreman-solo explain` | Built, experimental |
 
 Order and reasoning: [docs/plans/roadmap.md](docs/plans/roadmap.md).
 

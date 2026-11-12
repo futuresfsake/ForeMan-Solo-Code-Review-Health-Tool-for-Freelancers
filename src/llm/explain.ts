@@ -10,7 +10,7 @@ import { createRedactor } from "./redact.js";
 import { explainMessages, type ExplainContext } from "./prompt.js";
 import { extractJson } from "./review.js";
 import type { LlmProvider } from "./provider.js";
-import { printable } from "./text.js";
+import { printable } from "../text.js";
 
 export interface ExplainArea {
   name: string;

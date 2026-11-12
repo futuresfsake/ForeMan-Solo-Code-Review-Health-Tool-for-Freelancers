@@ -14,7 +14,7 @@ Exit criteria must be runnable or checkable.
 | M6 | Built, experimental | `foreman-solo review` on local Ollama (ADR-0007): context builder, tagged comments with confidence, secret masking, `--dry-run`, and reply round-trip; verified by `tests/review.test.ts` with a fake model. Tried once on a real `qwen2.5-coder:7b`: it works end to end but the small model mostly restates scanner findings and generic advice, and missed a seeded business-logic bug. A hosted provider is not built |
 | M7 | Done | Plain-English risk text for every rule, and `--report client` with "prepared by", client name, logo and accent colour; verified by `tests/init-client.test.ts` |
 | M8 | Done as a sample | `init --ci` writes a workflow that scans on push and weekly and fails on blockers or a low score. It relies on the npm package, which is not published yet |
-| M9 | Not started | `explain` can now reuse the M6 context builder and provider |
+| M9 | Built, experimental | `foreman-solo explain` on the same local model: framework, routes and scan findings go in as facts with a sample of the most connected files (secrets masked), and the answer is an overview, a walkthrough, risky patterns and a before-you-start list; verified by `tests/explain.test.ts` with a fake model. Not yet tried on a real model or an unfamiliar real repo |
 | M10 | Done for NestJS, on fixtures | NestJS adapter; auth and rate-limit rules run on it unchanged; verified by `tests/nestjs.test.ts`. Not yet run on a real Nest project; Fastify and Next.js not started |
 
 ## Scope and exit criteria

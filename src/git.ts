@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { childEnv, findProgram } from "./exec.js";
 
 /**
  * A project handed over as a folder brings its own `.git/config`, and git will
@@ -9,6 +10,19 @@ import { spawnSync } from "node:child_process";
 const BASE = ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=", "-c", "core.pager=cat"];
 
 export class UnsafeGitConfigError extends Error {}
+
+/**
+ * The git program by absolute path, never one that sits in the project being
+ * read (see src/exec.ts). Null when git is not installed.
+ */
+export function gitProgram(root: string): string | null {
+  return findProgram("git", { avoid: root });
+}
+
+/** Options every git child process gets, so nothing is looked up in the current folder. */
+export function gitSpawnOptions(): { env: NodeJS.ProcessEnv; windowsHide: true } {
+  return { env: childEnv(), windowsHide: true };
+}
 
 /** Arguments for a git command that only reads the index and the object store. */
 export function safeGitArgs(root: string, args: string[]): string[] {
@@ -21,7 +35,10 @@ export function safeGitArgs(root: string, args: string[]): string[] {
  * replaced by nothing, whichever config file it came from.
  */
 export function filterOverrides(root: string): string[] {
-  const res = spawnSync("git", safeGitArgs(root, ["config", "-z", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|smudge|process|required)$"]), {
+  const git = gitProgram(root);
+  if (!git) return [];
+  const res = spawnSync(git, safeGitArgs(root, ["config", "-z", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|smudge|process|required)$"]), {
+    ...gitSpawnOptions(),
     encoding: "utf8",
     timeout: 10_000,
     stdio: ["ignore", "pipe", "ignore"],

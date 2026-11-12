@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { safeGitArgs } from "../git.js";
 import fs from "node:fs";
 import path from "node:path";
 import { lineOf } from "../ast.js";
@@ -39,7 +40,7 @@ function looksLikeSecretValue(value: string, envFallback: boolean): boolean {
 }
 
 function git(root: string, args: string[]): number | null {
-  const res = spawnSync("git", ["-C", root, ...args], { stdio: "ignore", timeout: 10_000 });
+  const res = spawnSync("git", safeGitArgs(root, args), { stdio: "ignore", timeout: 10_000 });
   return res.error ? null : res.status;
 }
 

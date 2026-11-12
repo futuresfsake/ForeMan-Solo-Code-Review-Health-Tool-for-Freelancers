@@ -59,6 +59,17 @@ export function isLocalEndpoint(endpoint: string): boolean {
   }
 }
 
+/**
+ * Ollama serves some models from its own servers through the local endpoint;
+ * their names end in "cloud" (for example "qwen3-coder:480b-cloud"). Those
+ * would send code off this machine, so they are refused by name (ADR-0007).
+ */
+export function isCloudModel(model: string): boolean {
+  return /(^|[:\-_.])cloud$/i.test(model.trim());
+}
+
+export const CLOUD_MODEL_MESSAGE = "is served from Ollama's servers, not from this machine, so code would leave it. Use a model that runs locally.";
+
 const SEVERITIES = new Set(["blocker", "should-fix", "nice-to-have"]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -163,6 +174,7 @@ export function mergeConfig(raw: unknown): Config {
     }
     if (l.model !== undefined) {
       if (typeof l.model !== "string" || l.model.trim() === "") throw new ConfigError(`"llm.model" must be a model name.`);
+      if (isCloudModel(l.model)) throw new ConfigError(`"llm.model" ${CLOUD_MODEL_MESSAGE}`);
       cfg.llm.model = l.model.trim();
     }
     if (l.endpoint !== undefined) {

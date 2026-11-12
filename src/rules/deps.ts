@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { UNSAFE_IN_SHELL, childEnv, findProgram, windowsShell } from "../exec.js";
 import type { AuditOutcome, AuditVulnerability, RawFinding, Rule, Severity } from "../types.js";
 
 const NPM_LOCKFILES = ["package-lock.json", "npm-shrinkwrap.json"];
@@ -36,18 +37,51 @@ export function parseAuditJson(stdout: string): AuditOutcome {
  * Runs `npm audit` in the project. This is the only network call in a scan:
  * npm sends the dependency names and versions from the lockfile to the
  * registry. It installs nothing and runs no project scripts.
+ *
+ * npm is started by absolute path and never from the project folder, so a
+ * project that ships its own `npm.cmd` cannot have it run (see src/exec.ts).
  */
 export function runNpmAudit(root: string): AuditOutcome {
-  const res = spawnSync("npm", ["audit", "--json"], {
-    cwd: root,
-    encoding: "utf8",
-    shell: process.platform === "win32",
-    timeout: 60_000,
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  const npm = findProgram("npm", { avoid: root, extensions: [".exe", ".cmd"] });
+  if (!npm) return { ok: false, reason: "npm was not found on this machine" };
+  // On Windows npm is a .cmd script, which only the command interpreter can start.
+  const script = /\.(cmd|bat)$/i.test(npm);
+  if (script && UNSAFE_IN_SHELL.test(npm)) {
+    return { ok: false, reason: "npm is installed in a folder whose name cannot be passed to the Windows shell safely" };
+  }
+  const common = { cwd: root, encoding: "utf8" as const, env: childEnv(), timeout: 60_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true };
+  const res = script
+    ? spawnSync(`"${npm}" audit --json`, { ...common, shell: windowsShell() })
+    : spawnSync(npm, ["audit", "--json"], common);
   if (res.error) return { ok: false, reason: `npm audit could not run (${res.error.message})` };
   if (!res.stdout) return { ok: false, reason: "npm audit returned no output (offline?)" };
   return parseAuditJson(res.stdout);
+}
+
+/** Settings in a project's own `.npmrc` that change which server `npm audit` asks, or whether its answer can be trusted. */
+const NPMRC_KEYS = /^\s*((?:@[^:=\s]+:)?registry|proxy|https-proxy|strict-ssl|cafile|ca|audit|audit-level)\s*=/i;
+
+/**
+ * `npm audit` obeys the project's `.npmrc`. A project you did not write can use
+ * it to send the audit to its own server, which could answer "no problems".
+ * The scan cannot stop npm reading the file, so it says when this applies.
+ */
+export function npmrcNotes(root: string): string[] {
+  let text: string;
+  try {
+    const file = path.join(root, ".npmrc");
+    if (fs.statSync(file).size > 64 * 1024) return ["This project's .npmrc is unusually large and was not read. Check it before relying on the dependency result."];
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const keys = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const m = NPMRC_KEYS.exec(line.slice(0, 200));
+    if (m) keys.add(m[1]!.toLowerCase().replace(/^@.*:registry$/, "a scoped registry"));
+  }
+  if (keys.size === 0) return [];
+  return [`This project's .npmrc sets ${[...keys].sort().join(", ")}, which changes where or how the dependency check asks for advisories. Read .npmrc before relying on the dependency result.`];
 }
 
 function severityFor(level: string): Severity {

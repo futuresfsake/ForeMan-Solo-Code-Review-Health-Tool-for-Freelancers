@@ -46,7 +46,7 @@ function resolveImport(from: string, spec: string, known: Set<string>): string |
   return candidates.find((c) => known.has(c));
 }
 
-function importsOf(file: ParsedFile, known: Set<string>): string[] {
+export function importsOf(file: ParsedFile, known: Set<string>): string[] {
   const out = new Set<string>();
   for (const m of file.text.matchAll(IMPORT)) {
     const resolved = resolveImport(file.path, m[1]!, known);

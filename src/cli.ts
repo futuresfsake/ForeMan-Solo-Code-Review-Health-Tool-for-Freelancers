@@ -6,7 +6,8 @@ import { globToRegExp } from "./glob.js";
 import { applyHistory } from "./history.js";
 import { initProject } from "./init.js";
 import { LlmError, createOllamaProvider, type LlmProvider } from "./llm/provider.js";
-import { renderComment, renderReview } from "./llm/render.js";
+import { runExplain } from "./llm/explain.js";
+import { renderComment, renderExplain, renderReview } from "./llm/render.js";
 import { ReviewError, replyToComment, runReview, saveReview } from "./llm/review.js";
 import { BrandError, loadBrand } from "./report/brand.js";
 import { renderClientHtml } from "./report/client.js";
@@ -235,6 +236,29 @@ async function runReviewCommand(target: string | undefined, flags: ReviewFlags, 
   return EXIT.ok;
 }
 
+interface ExplainFlags {
+  model?: string;
+  format: "text" | "json";
+  config?: string;
+  dryRun?: boolean;
+}
+
+/** Opt-in, like `review`: a plain-language walkthrough of an unfamiliar project (FR-28). */
+async function runExplainCommand(target: string | undefined, flags: ExplainFlags, io: Io): Promise<number> {
+  const root = path.resolve(io.cwd, target ?? ".");
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw new UsageError(`Not a folder: ${root}`);
+  const config = loadConfig(root, flags.config ? path.resolve(io.cwd, flags.config) : undefined);
+  if (flags.model) config.llm.model = flags.model;
+  const provider = (io.llm ?? ((s) => createOllamaProvider({ endpoint: s.endpoint, model: s.model })))(config.llm);
+  const result = await runExplain({ root, config, provider, dryRun: flags.dryRun });
+  if (result.promptPreview !== undefined) {
+    io.out(`${result.promptPreview}\n\n--- Dry run: this is exactly what would be sent. Nothing was sent.${result.notes.length ? `\n${result.notes.join("\n")}` : ""}`);
+    return EXIT.ok;
+  }
+  io.out(flags.format === "json" ? JSON.stringify(result, null, 2) : renderExplain(result, io.color ? COLOR : PLAIN));
+  return EXIT.ok;
+}
+
 /** Runs the CLI and returns the process exit code. Never calls process.exit. */
 export async function main(argv: string[], io: Io = defaultIo()): Promise<number> {
   let code: number = EXIT.ok;
@@ -291,6 +315,18 @@ export async function main(argv: string[], io: Io = defaultIo()): Promise<number
     .option("--no-history", "do not save the review to .foreman/review.json")
     .action(async (target: string | undefined, flags: ReviewFlags) => {
       code = await runReviewCommand(target, flags, io);
+    });
+
+  program
+    .command("explain")
+    .description("Experimental: ask a local model to walk you through an unfamiliar project. Optional; the scan never needs it.")
+    .argument("[path]", "project folder")
+    .option("--model <name>", "Ollama model to use (default: llm.model in the config)")
+    .option("--format <format>", "what to print: text or json", choice(["text", "json"] as const), "text")
+    .option("--dry-run", "print exactly what would be sent to the model, and send nothing")
+    .option("--config <file>", "config file (default: foreman.config.json in the project)")
+    .action(async (target: string | undefined, flags: ExplainFlags) => {
+      code = await runExplainCommand(target, flags, io);
     });
 
   try {

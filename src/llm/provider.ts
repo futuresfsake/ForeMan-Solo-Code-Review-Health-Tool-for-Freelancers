@@ -1,4 +1,4 @@
-import { isLocalEndpoint } from "../config.js";
+import { CLOUD_MODEL_MESSAGE, isCloudModel, isLocalEndpoint } from "../config.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -38,6 +38,10 @@ export function createOllamaProvider(options: OllamaOptions): LlmProvider {
   if (!isLocalEndpoint(options.endpoint)) {
     throw new LlmError("The LLM endpoint must be on this machine (localhost or 127.0.0.1).");
   }
+  // Checked here as well as in the config, because --model does not pass through the config.
+  if (isCloudModel(options.model)) {
+    throw new LlmError(`The model "${options.model}" ${CLOUD_MODEL_MESSAGE}`);
+  }
   const doFetch = options.fetchImpl ?? fetch;
   const url = `${options.endpoint.replace(/\/+$/, "")}/api/chat`;
 
@@ -56,6 +60,8 @@ export function createOllamaProvider(options: OllamaOptions): LlmProvider {
             ...(opts.json ? { format: "json" } : {}),
             options: { temperature: 0.1, num_ctx: NUM_CTX },
           }),
+          // A redirect could carry the prompt to another machine; never follow one.
+          redirect: "error",
           signal: AbortSignal.timeout(options.timeoutMs ?? 5 * 60_000),
         });
       } catch (err) {

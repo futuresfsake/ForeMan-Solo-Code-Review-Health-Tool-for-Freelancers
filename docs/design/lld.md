@@ -27,7 +27,8 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/llm/redact.ts` | Masks secrets before anything goes into a prompt |
 | `src/llm/prompt.ts` | The review and reply prompts |
 | `src/llm/review.ts` | Runs a review, validates the model's answer, replies, saves `.foreman/review.json` |
-| `src/llm/render.ts` | Terminal output for a review |
+| `src/llm/explain.ts` | Runs `explain`, validates the answer against real files |
+| `src/llm/render.ts` | Terminal output for a review and for explain |
 | `src/report/text.ts`, `html.ts` | Terminal, Markdown, summary table and HTML output |
 
 ## CLI
@@ -48,6 +49,7 @@ foreman-solo init [path]      write foreman.config.json and git-ignore .foreman/
   --ci                        also write .github/workflows/foreman-solo.yml (scan on push and weekly)
 
 foreman-solo review [path]    experimental; asks a local model to review the current git diff
+foreman-solo explain [path]   experimental; asks a local model for a walkthrough of an unfamiliar project (--model, --format, --dry-run, --config)
   --base <ref>                compare against this branch, tag or commit (default HEAD)
   --model <name>              Ollama model (default: llm.model in the config)
   --format <text|json>        what to print (default text)
@@ -237,6 +239,12 @@ Flow: `git diff <base>` -> parse and number lines -> run the scan -> mask secret
 `--reply` sends the original comment, the code around it, the thread so far and the developer's message back to the model, which answers `maintain`, `revise` or `withdraw`. The exchange is stored on the comment. The review is saved to `.foreman/review.json`.
 
 Review JSON: `{ schemaVersion: 1, tool, kind: "review", model, reviewedAt, base, changedFiles, skippedFiles, staticFindings, comments, hidden, droppedInvalid, notes }`.
+
+## Explain (M9, experimental)
+
+`foreman-solo explain [path]` (FR-28) runs the scan (without `npm audit`), ranks source files (entry file, files with routes, then by how many files import them), masks secrets, and sends the framework, scripts, dependency names, file list, routes, open findings and the start of the top files (about 10,000 characters in all) to the model. The answer is validated: areas and risks must name files that exist, severity falls back to `should-fix`, and lists are capped at 8. It is printed only; nothing is saved into the project.
+
+Explain JSON: `{ schemaVersion: 1, tool, kind: "explain", model, explainedAt, project, framework, filesRead, staticFindings, overview, areas: { name, files, what }[], risks: { file, severity, body }[], beforeYouStart, notes }`.
 
 Not implemented: hosted providers, `explain` (M9).
 

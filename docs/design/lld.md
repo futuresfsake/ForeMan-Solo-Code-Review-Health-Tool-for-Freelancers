@@ -10,6 +10,11 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/cli.ts` | Flags, orchestration, exit codes; `main(argv, io)` is testable without spawning |
 | `src/config.ts` | Defaults, loading and validation of `foreman.config.json` |
 | `src/loader.ts` | Walks the project, applies ignores, parses each file |
+| `src/ast.ts` | Tree walk without recursion, tree depth, small syntax helpers |
+| `src/glob.ts` | Glob matching for `ignorePaths` and `--all`, in time proportional to pattern length times text length |
+| `src/exec.ts` | Finds `git` and `npm` on `PATH` by absolute path, never in the project being scanned; the environment for child processes |
+| `src/fsafe.ts` | The only way the tool writes a file: inside a base folder and never through a link |
+| `src/text.ts` | Strips control and text-direction characters from any text that did not come from the tool (project names, paths, model answers) before it is stored or printed |
 | `src/git.ts` | Arguments for every git call that stop a repository's own git settings from running programs |
 | `src/adapters/express.ts` | Express routes, mounts and middleware into a normalized model |
 | `src/adapters/nestjs.ts` | NestJS controllers, guards and global setup into the same model |
@@ -23,7 +28,6 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/report/client.ts` | Plain-English client summary |
 | `src/report/brand.ts` | Loads the logo and accent colour for the client report |
 | `src/llm/provider.ts` | `LlmProvider` interface and the Ollama provider (local endpoints only, no redirects, no cloud models) |
-| `src/llm/text.ts` | Strips control and text-direction characters from model text before it is saved or printed |
 | `src/llm/diff.ts` | Runs `git diff`, parses it, numbers new-file lines |
 | `src/llm/context.ts` | Context builder: files the change imports, files that import it, routes, scan findings |
 | `src/llm/redact.ts` | Masks secrets before anything goes into a prompt |
@@ -39,11 +43,12 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 foreman-solo scan [path]      default path = .
   --all <paths...>            scan many project folders, print a summary table
   --report <html|md|client>   also write a report file; client = plain-English summary
-  --out <dir>                 report folder (default ./foreman-report)
+  --out <dir>                 report folder, anywhere you choose (default ./foreman-report)
   --format <text|json>        what to print (default text)
   --context <file>            project context file (reserved)
   --fail-under <0-100>        exit 1 if the score is below this
-  --config <file>             default: foreman.config.json in the project
+  --config <file>             your own config file (default: foreman.config.json in the project)
+  --no-project-config         ignore the project's foreman.config.json and scan with the defaults
   --no-audit                  skip npm audit (offline)
   --no-history                do not write .foreman/history.json
 
@@ -51,17 +56,20 @@ foreman-solo init [path]      write foreman.config.json and git-ignore .foreman/
   --ci                        also write .github/workflows/foreman-solo.yml (scan on push and weekly)
 
 foreman-solo review [path]    experimental; asks a local model to review the current git diff
-foreman-solo explain [path]   experimental; asks a local model for a walkthrough of an unfamiliar project (--model, --format, --dry-run, --config)
   --base <ref>                compare against this branch, tag or commit (default HEAD)
   --model <name>              Ollama model (default: llm.model in the config)
   --format <text|json>        what to print (default text)
   --dry-run                   print exactly what would be sent to the model, send nothing
   --reply <n> --message <t>   answer back to comment n of the last review
-  --config <file>             default: foreman.config.json in the project
+  --config <file>             your own config file (default: foreman.config.json in the project)
+  --no-project-config         ignore the project's foreman.config.json
   --no-history                do not save the review to .foreman/review.json
 
-planned: foreman-solo explain (M9)
+foreman-solo explain [path]   experimental; asks a local model for a walkthrough of an unfamiliar project
+  --model, --format, --dry-run, --config, --no-project-config    as for review
 ```
+
+`--no-project-config` is for a project you do not trust yet: its own config can turn rules off, ignore folders and change the score. `--config` wins when both are given.
 
 With `--all`, a pattern such as `./clients/*` is expanded by the tool itself, so it works the same in every shell. Reports go to `<out>/<project>/report.html` plus `<out>/summary.html`.
 
@@ -71,8 +79,8 @@ With `--all`, a pattern such as `./clients/*` is expanded by the tool itself, so
 |---|---|
 | 0 | Scan ok, no open blockers, score at or above the threshold |
 | 1 | Open blockers, or score below `--fail-under` (any project, with `--all`) |
-| 2 | Usage or config error |
-| 3 | Internal error |
+| 2 | Usage or config error, including a report that would be written outside the allowed folder or through a link |
+| 3 | Internal error. Also returned when a rule failed while scanning and nothing else is wrong: the result is printed, marked incomplete, and must not be read as clean. Code 1 takes precedence when there are blockers |
 
 ## Core types
 
@@ -171,7 +179,7 @@ Rules are pure functions of the model. They never touch the network; the depende
 | GL-06 | Admin/internal routes locked down | auth/missing-on-sensitive-route |
 | GL-07 | Rate limiting on auth routes | config/no-rate-limit-auth |
 
-States: `pass`, `fail`, `unverified`. An item is `unverified` when its rule could not run (no routes found, rule turned off) or it cannot be checked from code. An attestation in the config turns `unverified` into `pass` and is shown in the report; it never overrides `fail`. "Ready to ship" requires every item to be `pass`.
+States: `pass`, `fail`, `unverified`. An item passes only when every rule behind it ran, on every source file, and found nothing. It is `unverified` when any of its rules did not run (no routes found, a rule turned off or failed; the note names the rules), when a source file could not be analysed as code, or when it cannot be checked from code at all. An attestation in the config turns `unverified` into `pass` and is shown in the report; it never overrides `fail`. "Ready to ship" requires every item to be `pass`.
 
 ## Health score
 
@@ -201,19 +209,40 @@ Defaults: blocker 15, should-fix 5, nice-to-have 1; high 1.0, medium 0.6, low 0.
   "coverage": {
     "filesScanned": 0,
     "filesWithSyntaxErrors": 0,
+    "filesNotAnalysed": 0,
     "routesFound": 0,
     "rulesRun": [],
-    "rulesSkipped": [{ "id": "deps/vulnerable", "reason": "dependency audit disabled for this run" }]
+    "rulesSkipped": [{ "id": "deps/vulnerable", "reason": "dependency audit disabled for this run" }],
+    "configChanges": ["ignorePaths", "rules"]
   },
   "warnings": []
 }
 ```
 
-`trend` is `up`, `flat`, `down` or `none` (first scan). No absolute paths appear in the output. With `--all` the output is `{ "schemaVersion": 1, "projects": [...] }`.
+`trend` is `up`, `flat`, `down` or `none` (first scan). No absolute paths appear in the output.
+
+`coverage.filesNotAnalysed` counts source files the rules could not read as code: larger than 1 MB, nested more than 1,500 levels deep, or unparsable. `coverage.configChanges` lists the config keys that differ from the defaults and change what is scanned or how it is scored (`ignorePaths`, `failUnder`, `audit`, `sensitiveRoutes`, `authMiddlewareNames`, `weights`, `confidenceFactor`, `rules`, `ignore`, `checklist`); it is empty for a scan with the defaults. A reason in `rulesSkipped` that starts with `internal error` means a rule failed and the result is incomplete. Both fields were added in 0.1.0 before the first release.
+
+Every string that comes from the project (its name, file paths, messages that quote code, suppression reasons, warnings) has control and text-direction characters removed and is cut to a fixed length before it enters this structure, so every output format receives clean text. With `--all` the output is `{ "schemaVersion": 1, "projects": [...] }`.
 
 ## History
 
 `.foreman/history.json` inside each scanned project: an array of `{ scannedAt, score, findingCount }`, capped at 200 entries. Nothing else is stored. Disable with `--no-history`.
+
+The file sits in the project, so it is read as untrusted: an entry is kept only if `scannedAt` is an ISO timestamp and `score` is a number from 0 to 100, and only those three fields are written back. If `.foreman` or the file is a link, nothing is written and the scan warns.
+
+## Untrusted input
+
+The scanned project is treated as hostile input ([security-and-trust.md](../security-and-trust.md), [the review that led to this](../security/security-audit.md)). Four rules follow, and new code must keep them:
+
+| Rule | Mechanism |
+|---|---|
+| Never start a program by bare name | `findProgram` in `src/exec.ts` returns an absolute path from `PATH`, skipping relative entries and folders inside the project; child processes get `childEnv()` |
+| Never write a file directly | `writeInside` / `writeReportFile` in `src/fsafe.ts`: inside a base folder, never through a link |
+| Never print or store project text as it is | `clipped` / `printable` in `src/text.ts`, applied in `scanProject`; `escapeHtml` in HTML; `cell` in Markdown |
+| Never run an unbounded pattern over a whole line or file | Bounded walks in `src/rules/secrets.ts`; `globMatch` in `src/glob.ts`; length limits before the remaining patterns |
+
+A file that could break the rules (too large, too deep, unparsable) is not analysed as code; it is named in a warning and counted in `coverage.filesNotAnalysed`. A rule that fails is recorded in `rulesSkipped` and the process exits with 3.
 
 ## Suppression
 
@@ -238,6 +267,8 @@ interface ReviewComment {
 
 Flow: `git diff <base>` -> parse and number lines -> run the scan -> mask secrets -> build context (files the change imports, files that import it, routes in the changed files, open scan findings in them, within a character budget) -> prompt with the scan's findings as facts -> validate the answer. A comment is kept only if it names a changed file and a line; the line is moved to the nearest added line; severity falls back to `should-fix`; confidence is capped at `medium`. Comments on a line the scan already reported go to `hidden`. At most 8 comments are kept.
 
+Prompt size: the whole prompt is kept under 26,000 characters. The scan findings and routes sent are capped at 30 and 40; if the prompt is still too large, related files are dropped, then the end of the changed code is cut, last file first. Each cut adds a note to the result, and comments are tied to the lines that were actually sent. Lines over 2,000 characters are replaced by a placeholder before masking.
+
 `--reply` sends the original comment, the code around it, the thread so far and the developer's message back to the model, which answers `maintain`, `revise` or `withdraw`. The exchange is stored on the comment. The review is saved to `.foreman/review.json`.
 
 Review JSON: `{ schemaVersion: 1, tool, kind: "review", model, reviewedAt, base, changedFiles, skippedFiles, staticFindings, comments, hidden, droppedInvalid, notes }`.
@@ -248,8 +279,8 @@ Review JSON: `{ schemaVersion: 1, tool, kind: "review", model, reviewedAt, base,
 
 Explain JSON: `{ schemaVersion: 1, tool, kind: "explain", model, explainedAt, project, framework, filesRead, staticFindings, overview, areas: { name, files, what }[], risks: { file, severity, body }[], beforeYouStart, notes }`.
 
-Not implemented: hosted providers, `explain` (M9).
+Not implemented: hosted providers.
 
 ## Client report
 
-`--report client` writes `client-report.html`: what was reviewed, findings grouped by topic with their plain-English risk, and the checklist in plain words. It contains no file paths, rule IDs, code or secrets, never states that the project is secure, and carries the disclaimer. Names come from `report.preparedBy` and `report.clientName`. Branding (FR-26) comes from `report.logo` and `report.accentColor`: `src/report/brand.ts` reads the logo file, checks its type and size (256 KB), and embeds it as a `data:` URI shown through an `<img>` tag, so the report stays one offline file and an SVG logo cannot run scripts. The accent colour is validated as `#rrggbb` by the config loader and used only for borders.
+`--report client` writes `client-report.html`: what was reviewed, findings grouped by topic with their plain-English risk, and the checklist in plain words. It contains no file paths, rule IDs, code or secrets, never states that the project is secure, and carries the disclaimer. Names come from `report.preparedBy` and `report.clientName`. Branding (FR-26) comes from `report.logo` and `report.accentColor`: `src/report/brand.ts` reads the logo file, checks that it is a real file inside the project (unless the config was passed with `--config`), checks its type and size (256 KB), and embeds it as a `data:` URI shown through an `<img>` tag, so the report stays one offline file and an SVG logo cannot run scripts. The accent colour is validated as `#rrggbb` by the config loader and used only for borders.

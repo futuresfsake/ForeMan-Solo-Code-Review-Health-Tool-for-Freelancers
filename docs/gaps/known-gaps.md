@@ -38,7 +38,7 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 - It reviews the git diff of the working tree against a base (`HEAD` by default). New files that git does not track yet are not in a diff, so stage or commit them first.
 - Only parsed source files are sent. `.env`, JSON, YAML and ignored paths are never part of the prompt.
 - Secrets are masked before sending: well-known key formats, private key blocks, passwords inside connection strings (`scheme://user:password@host`), JSON Web Tokens, literal `Bearer` tokens, and string values on lines the scan flagged. A secret in any other shape that the scan does not recognise is not masked. Use `--dry-run` to see exactly what would be sent.
-- The scan itself does not report connection-string passwords or JWTs as findings yet; they are only masked for the model.
+- The scan reports a password inside a connection string (a non-default one; defaults go to `config/default-credentials`) and a literal JSON Web Token as findings. It still cannot recognise a secret in any other shape.
 - The prompt has no hard size limit: a changed file with a very large number of routes or findings can push it past the model's context, and Ollama then cuts it silently. `explain` has such a limit; `review` does not yet.
 - Comments on a line the scan already reported are not shown, as likely repeats. They are kept in the JSON output (`hidden`), so this guess can be checked.
 - Comments are never "high" confidence, and a comment that cannot be tied to a changed line is dropped.

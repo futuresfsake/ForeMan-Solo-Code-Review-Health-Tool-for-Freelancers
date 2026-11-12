@@ -10,6 +10,7 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/cli.ts` | Flags, orchestration, exit codes; `main(argv, io)` is testable without spawning |
 | `src/config.ts` | Defaults, loading and validation of `foreman.config.json` |
 | `src/loader.ts` | Walks the project, applies ignores, parses each file |
+| `src/git.ts` | Arguments for every git call that stop a repository's own git settings from running programs |
 | `src/adapters/express.ts` | Express routes, mounts and middleware into a normalized model |
 | `src/adapters/nestjs.ts` | NestJS controllers, guards and global setup into the same model |
 | `src/adapters/index.ts` | Adapter list; the first adapter that recognizes the project is used |
@@ -21,7 +22,8 @@ Contracts below are stable once released (NFR-10). TypeScript notation. This pag
 | `src/init.ts` | Starter config, git-ignore entries and the sample workflow |
 | `src/report/client.ts` | Plain-English client summary |
 | `src/report/brand.ts` | Loads the logo and accent colour for the client report |
-| `src/llm/provider.ts` | `LlmProvider` interface and the Ollama provider (local endpoints only) |
+| `src/llm/provider.ts` | `LlmProvider` interface and the Ollama provider (local endpoints only, no redirects, no cloud models) |
+| `src/llm/text.ts` | Strips control and text-direction characters from model text before it is saved or printed |
 | `src/llm/diff.ts` | Runs `git diff`, parses it, numbers new-file lines |
 | `src/llm/context.ts` | Context builder: files the change imports, files that import it, routes, scan findings |
 | `src/llm/redact.ts` | Masks secrets before anything goes into a prompt |
@@ -242,7 +244,7 @@ Review JSON: `{ schemaVersion: 1, tool, kind: "review", model, reviewedAt, base,
 
 ## Explain (M9, experimental)
 
-`foreman-solo explain [path]` (FR-28) runs the scan (without `npm audit`), ranks source files (entry file, files with routes, then by how many files import them), masks secrets, and sends the framework, scripts, dependency names, file list, routes, open findings and the start of the top files (about 10,000 characters in all) to the model. The answer is validated: areas and risks must name files that exist, severity falls back to `should-fix`, and lists are capped at 8. It is printed only; nothing is saved into the project.
+`foreman-solo explain [path]` (FR-28) runs the scan (without `npm audit`), ranks source files (entry file, files with routes, then by how many files import them), masks secrets, and sends the framework, scripts, dependency names, file list, routes, open findings and the start of the top files to the model. Each list is capped (60 file names, 40 routes, the 30 most serious findings, 60 script and dependency names) and the whole prompt is kept under 20,000 characters by dropping sampled files from the end, so it fits the model's context. The answer is validated: areas and risks must name files that exist, severity falls back to `should-fix`, and lists are capped at 8. It is printed only; nothing is saved into the project.
 
 Explain JSON: `{ schemaVersion: 1, tool, kind: "explain", model, explainedAt, project, framework, filesRead, staticFindings, overview, areas: { name, files, what }[], risks: { file, severity, body }[], beforeYouStart, notes }`.
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { detectFramework } from "../adapters/index.js";
 import type { Config } from "../config.js";
-import { loadProject, readPackageJson } from "../loader.js";
+import { isSourceFileName, loadProject, readPackageJson } from "../loader.js";
 import { scanProject } from "../scan.js";
 import type { Confidence, Severity } from "../types.js";
 import { buildContext } from "./context.js";
@@ -10,6 +10,7 @@ import { createRedactor } from "./redact.js";
 import { getDiff, parseDiff, ReviewError, renderNumbered, type DiffFile } from "./diff.js";
 import { renderChangedFiles, replyMessages, reviewMessages } from "./prompt.js";
 import type { LlmProvider } from "./provider.js";
+import { printable } from "./text.js";
 
 export { ReviewError } from "./diff.js";
 
@@ -122,7 +123,7 @@ export function normalizeComments(raw: unknown, changed: DiffFile[]): Normalized
   let dropped = 0;
   for (const item of list) {
     const o = (typeof item === "object" && item !== null ? item : {}) as Record<string, unknown>;
-    const body = typeof o.body === "string" ? o.body.trim() : "";
+    const body = printable(o.body);
     const line = typeof o.line === "number" && Number.isFinite(o.line) ? Math.round(o.line) : NaN;
     const file = typeof o.file === "string" ? o.file.replace(/^\.?\//, "").replace(/\\/g, "/") : changed.length === 1 ? changed[0]!.path : "";
     const target = byPath.get(file);
@@ -259,12 +260,21 @@ export function loadReview(root: string): ReviewResult {
 
 /** The lines around a comment, read from the working tree and kept inside the project. */
 function snippetFor(root: string, comment: ReviewComment): string {
-  const abs = path.resolve(root, comment.file);
-  if (!abs.startsWith(path.resolve(root) + path.sep)) throw new ReviewError("The saved review points outside the project.");
+  const base = path.resolve(root);
+  const abs = path.resolve(base, String(comment.file));
+  if (!abs.startsWith(base + path.sep)) throw new ReviewError("The saved review points outside the project.");
+  // The saved review is a file in the project and may not be ours. Only source
+  // code is ever sent: never a settings file such as .env, and never a link
+  // that leads somewhere else.
+  if (!isSourceFileName(path.basename(abs))) throw new ReviewError("The saved review points at a file that is not source code.");
   let lines: string[];
   try {
+    if (fs.lstatSync(abs).isSymbolicLink() || !fs.realpathSync(abs).startsWith(fs.realpathSync(base) + path.sep)) {
+      throw new ReviewError("The saved review points outside the project.");
+    }
     lines = fs.readFileSync(abs, "utf8").split(/\r?\n/);
-  } catch {
+  } catch (err) {
+    if (err instanceof ReviewError) throw err;
     return "(the file could not be read)";
   }
   const from = Math.max(1, comment.line - 6);
@@ -290,7 +300,7 @@ export async function replyToComment(root: string, provider: LlmProvider, id: nu
     { json: true },
   );
   const parsed = extractJson(answer) as { stance?: unknown; reply?: unknown; severity?: unknown; confidence?: unknown };
-  const reply = typeof parsed.reply === "string" ? parsed.reply.trim() : "";
+  const reply = printable(parsed.reply);
   if (!reply) throw new ReviewError("The model did not give a reply. Try again.");
 
   comment.thread.push({ from: "developer", text: message.trim() }, { from: "reviewer", text: reply.slice(0, MAX_BODY) });

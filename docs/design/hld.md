@@ -90,10 +90,12 @@ Post-MVP: `ScanResult` + diff + dependent files feed the **LLM context pass** (`
 | Extensible | Adapter + rule interfaces; core knows neither |
 | Private | No server; reports are local files |
 | Honest | Confidence on every finding; checklist lists unchecked items |
-| Robust | Per-file parse isolation; per-rule try/catch converted to warnings |
+| Robust | Per-file parse isolation; a file too large, too deep or unparsable is set aside with a warning; a rule that fails marks the result incomplete (exit 3) instead of passing |
+| Safe on hostile input | The scanned project is untrusted: programs by absolute path only, no write through a link, project text cleaned before any output, bounded patterns (lld.md, "Untrusted input") |
 
 ## Boundaries
 
-- Reads the target repo; writes only reports and `.foreman/` history.
-- Spawns `npm audit` as a child process.
+- Reads the target repo; writes only reports and `.foreman/` history, never through a link and never outside the working folder unless `--out` says so.
+- Spawns `npm audit`, and `git` for read-only queries, as child processes, found on `PATH` by absolute path and never inside the scanned project.
+- Trust boundary: everything inside the scanned folder (source, `package.json`, `foreman.config.json`, `.npmrc`, `.git/config`, `.foreman/`, links, programs) is attacker-controlled input. The command line and a config passed with `--config` are the user's own.
 - Post-MVP: calls an LLM provider only when the user enables it and supplies a key.

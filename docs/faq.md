@@ -10,7 +10,11 @@
 
 **Is it a security audit?** No. See [security-and-trust.md](security-and-trust.md).
 
-**Why is a checklist item "unverified"?** It can't be proven from code (e.g. backups). Attest it in `foreman.config.json` with a note.
+**Why is a checklist item "unverified"?** Either it can't be proven from code (e.g. backups), or a check behind it did not run: a rule is turned off, no routes were found, or a source file could not be analysed. The note next to the item says which. Attest it in `foreman.config.json` with a note once you have confirmed it yourself.
+
+**I was handed a project. Is it safe to scan it?** That is what the tool is for. Nothing in the project is executed, nothing is written through its links, and its own config is named in the output whenever it changes the scan. For a first look, run `foreman-solo scan --no-project-config` and read the warnings. See [security-and-trust.md](security-and-trust.md#projects-you-did-not-write).
+
+**The scan exited with code 3.** A check failed partway, so the result is incomplete. Do not treat it as clean; the warnings say which rule failed.
 
 **It flagged a route as unauthenticated but it's public on purpose.** Add the route pattern to config or an inline `// foreman-ignore auth/missing-on-sensitive-route: public webhook`. A reason is required.
 

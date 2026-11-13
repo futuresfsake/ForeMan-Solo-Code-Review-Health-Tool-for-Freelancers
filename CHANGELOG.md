@@ -49,6 +49,7 @@ From the security review of 2026-11-12 (docs/security/security-audit.md). The pr
 - This repository's CI pins its actions to commits, installs with scripts disabled, verifies registry signatures and checks what the package would contain.
 
 ### Changed
+- After a first scan of the author's own NestJS project (docs/testing/validation-results.md, Round 2): `config/default-credentials` no longer fires on user-interface labels (strings or i18n files, and a capitalised value equal to the field name, such as `password: 'Password'`); `config/no-rate-limit-auth` drops to low confidence when the project has a limiter-named file, and is skipped when the route handler calls a throttle or rate limiter.
 - A go-live checklist item now passes only when every rule behind it ran on every source file. With a rule turned off or failed, or a file that could not be analysed, the item is `unverified` and the note says why. Before, GL-01 showed as passed with all three `secrets/*` rules off.
 - Exit code 3 is also returned when a rule failed while scanning and there are no blockers, so an incomplete scan cannot pass a CI job. The result is still printed.
 - An absolute path or `..` in `report.outDir` is now a config error (exit 2).

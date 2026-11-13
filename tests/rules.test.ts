@@ -156,6 +156,27 @@ describe("config rules", () => {
     expect(ids(r)).toEqual(["config/default-credentials", "config/default-credentials", "config/default-credentials"]);
   });
 
+  it("does not flag a form label or a strings file as a default credential, but still flags a real one", () => {
+    const labels = scan({
+      "src/strings.ts": `export const t = { login: { password: 'Password', email: 'Email' } };\n`,
+      "form.js": `const fields = { password: 'Password' };\n`,
+    });
+    expect(ids(labels)).toEqual([]);
+    expect(ids(scan({ "config.js": `const config = { password: "admin" };\n` }))).toEqual(["config/default-credentials"]);
+    expect(ids(scan({ "config.js": `const c = { password: process.env.DB_PASSWORD || "Password" };\n` }))).toEqual(["config/default-credentials"]);
+  });
+
+  it("lowers confidence when a custom limiter file exists, and skips a handler that calls one", () => {
+    const route = `app.post('/login', validate(s), (req, res) => res.end());`;
+    const plain = scan(app(route));
+    const withCustom = scan({ ...app(route), "src/login-throttle.js": `module.exports = class LoginThrottle {};\n` });
+    const f = withCustom.findings.find((x) => x.ruleId === "config/no-rate-limit-auth");
+    expect(plain.findings.find((x) => x.ruleId === "config/no-rate-limit-auth")?.confidence).not.toBe("low");
+    expect(f?.confidence).toBe("low");
+    expect(f?.message).toContain("login-throttle.js");
+    expect(ids(scan(app(`app.post('/login', validate(s), (req, res) => { loginThrottle.check(req.body.email); res.end(); });`)))).toEqual([]);
+  });
+
   it("flags stack traces sent to the client, not ones that are only logged", () => {
     const r = scan(app(`app.use((err, req, res, next) => { res.status(500).json({ error: err.message, stack: err.stack }); });`));
     expect(ids(r)).toEqual(["config/stack-trace-leak"]);

@@ -161,9 +161,9 @@ Rules are pure functions of the model. They never touch the network; the depende
 | config/debug-enabled | should-fix | high | Dev `start` script or hardcoded development env |
 | config/no-https-redirect | should-fix | low | No HTTPS or HSTS evidence anywhere in the code |
 | config/permissive-cors | should-fix | medium, high for explicit `*` | `cors()` with no options (once per file), `origin: '*'`, manual `*` header |
-| config/default-credentials | blocker | high | Default passwords, env fallbacks to defaults, default connection strings |
+| config/default-credentials | blocker | high | Default passwords, env fallbacks to defaults, default connection strings. Skips UI labels (strings or i18n files, `password: 'Password'`) |
 | config/stack-trace-leak | should-fix | high | `err.stack` sent in a response |
-| config/no-rate-limit-auth | should-fix | medium | POST auth-like routes with no limiter |
+| config/no-rate-limit-auth | should-fix | medium | POST auth-like routes with no limiter. Low confidence when a limiter-named file exists; skipped when the handler calls one |
 | deps/vulnerable | by npm audit level | high | critical/high = blocker, moderate = should-fix, low = nice-to-have |
 | deps/no-lockfile | nice-to-have | high | Dependencies but no lockfile |
 

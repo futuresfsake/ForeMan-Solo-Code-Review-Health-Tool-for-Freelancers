@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { lineOf, stringValue, unwrap, walk } from "../ast.js";
 import type { RawFinding, Rule } from "../types.js";
-import { DEFAULT_CREDENTIALS, NOT_A_SECRET_NAME, SECRET_NAME, stringAssignments } from "./shared.js";
+import { DEFAULT_CREDENTIALS, NOT_A_SECRET_NAME, SECRET_NAME, isUiLabel, stringAssignments } from "./shared.js";
 
 const HTTPS_EVIDENCE = /helmet|hsts|strict-transport-security|x-forwarded-proto|\.secure\b|express-sslify|enforce.{0,12}ssl|https\.createServer|force.{0,6}https/i;
 const DEFAULT_URL_CREDENTIALS = /:\/\/([A-Za-z0-9_]+):(password|admin|root|secret|changeme|123456|postgres|mysql|test)@/i;
@@ -55,6 +55,7 @@ export const configRule: Rule = {
       for (const a of stringAssignments(sf)) {
         const line = lineOf(sf, a.node);
         if (SECRET_NAME.test(a.name) && !NOT_A_SECRET_NAME.test(a.name) && DEFAULT_CREDENTIALS.has(a.value.toLowerCase())) {
+          if (!a.envFallback && isUiLabel(a.name, a.value, file.path)) continue;
           findings.push({
             ruleId: "config/default-credentials",
             file: file.path,

@@ -74,6 +74,21 @@ export const SECRET_NAME = /pass(word|wd)?|pwd|secret|token|api[_-]?key|private[
 /** Names that mention a secret but hold something else (a URL, a header name, a TTL). */
 export const NOT_A_SECRET_NAME = /(url|uri|path|field|name|type|header|prefix|expiry|expires|expiresin|length|regex|pattern|label|message|placeholder|param|endpoint|min|max|id|ttl|algorithm|strategy|cookie)$/i;
 
+const TEXT_FILE = /(^|[\\/])(i18n|locales?|translations?|strings|messages|copy|lang)([\\/.]|$)/i;
+
+/**
+ * True when a "secret-looking" name holds user-facing text rather than a credential:
+ * the file is a strings or translations file, or the value is the field's own name
+ * written as a label (`password: 'Password'`).
+ */
+export function isUiLabel(name: string, value: string, filePath: string): boolean {
+  if (TEXT_FILE.test(filePath)) return true;
+  return value.toLowerCase() === name.toLowerCase() && /^[A-Z]/.test(value);
+}
+
+/** Paths and names that suggest a hand-written limiter, such as a LoginThrottle service. */
+export const CUSTOM_LIMITER_FILE = /(throttl|rate-?limit|lockout|brute-?force)/i;
+
 export const DEFAULT_CREDENTIALS = new Set([
   "password", "passw0rd", "password1", "password123", "admin", "admin123", "administrator", "changeme", "change_me",
   "123456", "12345678", "secret", "root", "toor", "test", "default", "letmein", "qwerty", "guest", "postgres", "mysql",

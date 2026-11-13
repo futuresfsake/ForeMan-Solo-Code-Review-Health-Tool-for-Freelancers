@@ -5,7 +5,9 @@ What Foreman Solo will NOT do. Keep current; do not make this aspirational.
 ## Today (alpha, 0.1.0)
 
 - Not published to npm. Run it from a clone (see the README). The name `foreman-solo` is not registered yet, so until this project publishes it, `npx foreman-solo` would fetch whatever someone else put there. Do not run it.
-- Validated only on three open-source Express apps, not yet on a production codebase of the author's own (see testing/validation-results.md). Expect false positives and misses on code styles not seen yet.
+- Validated on three open-source Express apps and on one NestJS project of the author's own (see testing/validation-results.md), not on a client production codebase. Expect false positives and misses on code styles not seen yet.
+- `config/default-credentials` skips user-interface labels: any file in a strings, i18n, locales, translations, messages, copy or lang folder, and a value that is the field's own name capitalised (`password: 'Password'`). A real default written that way in an ordinary config file is missed.
+- `config/no-rate-limit-auth` only recognises limiters it can see on the route (middleware with `limit`, `throttle`, `brute` or `slowdown` in the name) or a handler that calls one. A limiter called from a service the controller uses cannot be followed. When a file named like a limiter exists, the finding stays but drops to low confidence and names that file; suppress it with a note once you have checked it covers the route.
 - `foreman-solo review` is experimental and `explain` is experimental too. `scan` never uses an LLM; only `review` and `explain` do, and only a model running on your own machine.
 - The workflow written by `init --ci` calls the npm package, which is not published yet. The file says so at the top; do not enable it before the package exists.
 - The client report supports a logo and one accent colour but no other theming, and there is no PDF export (print the HTML page to PDF from a browser).

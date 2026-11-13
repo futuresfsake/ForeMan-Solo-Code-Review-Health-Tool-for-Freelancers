@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { isFunctionLike } from "../ast.js";
 import type { RawFinding, RouteInfo, Rule } from "../types.js";
-import { hasAuth, hasRateLimit } from "./shared.js";
+import { CUSTOM_LIMITER_FILE, hasAuth, hasRateLimit } from "./shared.js";
 
 const VALIDATION_MIDDLEWARE = /valid|schema|celebrate|joi|zod|yup|sanitiz|^(body|param|query|check|checkSchema|oneOf|header|cookie)\b/i;
 const VALIDATION_IN_HANDLER = /\.(parse|safeParse|parseAsync|validate|validateAsync|validateSync)\s*\(|validationResult\s*\(|matchedData\s*\(|\bJoi\.|\bz\.|\byup\.|\bajv\b|parseInt\s*\(|Number\s*\(|isNaN\s*\(|typeof\s|isUUID|isMongoId|isValid|ObjectId\.isValid/;
@@ -100,14 +100,22 @@ export const rateLimitRule: Rule = {
   needsRoutes: true,
   run(model) {
     const findings: RawFinding[] = [];
+    // A hand-written limiter (for example a LoginThrottle service) is not a middleware we can
+    // follow from the route, so its presence lowers confidence instead of hiding the finding.
+    const custom = model.files.find((f) => CUSTOM_LIMITER_FILE.test(f.path) && !/\.(spec|test)\./.test(f.path));
     for (const route of model.routes) {
       if (route.method !== "POST" && route.method !== "ALL") continue;
       if (!AUTH_ROUTE.test(route.path) || hasRateLimit(route, model)) continue;
+      const inHandler = route.handler && isFunctionLike(route.handler) && /throttl|rate-?limit|lockout/i.test(route.handler.getText());
+      if (inHandler) continue;
       findings.push({
         ruleId: "config/no-rate-limit-auth",
         file: route.file,
         line: route.line,
-        message: `${label(route)} looks like an authentication route and has no rate limiting.`,
+        confidence: custom ? "low" : undefined,
+        message: custom
+          ? `${label(route)} looks like an authentication route. No rate limiter is visible on it, but ${custom.path} looks like a custom limiter; if it covers this route, suppress this finding with a note.`
+          : `${label(route)} looks like an authentication route and has no rate limiting.`,
       });
     }
     return findings;
